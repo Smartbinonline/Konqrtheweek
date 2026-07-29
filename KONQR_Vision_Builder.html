@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KONQR Vision Builder</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: sans-serif; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+var { useState, useEffect, useCallback } = React;
+
+
+var DOMAINS = [
+  { id: "financial", label: "Financial Freedom", icon: "\uD83D\uDCB0", prompt: "Income, investments, passive revenue, debt-free" },
+  { id: "career", label: "Career & Business", icon: "\uD83D\uDE80", prompt: "Ventures, products, professional growth" },
+  { id: "health", label: "Health & Vitality", icon: "\uD83C\uDF3F", prompt: "Fitness, energy, longevity, mental health" },
+  { id: "relationships", label: "Relationships", icon: "\u2764\uFE0F", prompt: "Family, partner, friendships, community" },
+  { id: "growth", label: "Personal Growth", icon: "\uD83E\uDDE0", prompt: "Skills, learning, mindset, creativity" },
+  { id: "adventure", label: "Adventure & Travel", icon: "\u2708\uFE0F", prompt: "Experiences, places, bucket list" },
+  { id: "home", label: "Home & Environment", icon: "\uD83C\uDFE1", prompt: "Where you live, lifestyle, surroundings" },
+  { id: "giving", label: "Legacy & Giving", icon: "\uD83C\uDF1F", prompt: "Impact, contribution, what you leave behind" }
+];
+
+var HORIZONS = [
+  { id: "10y", label: "10 years", sub: "The dream", prompt: "If everything went right and you made bold choices, where would you be?" },
+  { id: "5y", label: "5 years", sub: "The milestone", prompt: "What must be true in 5 years to be on track for your 10-year vision?" },
+  { id: "2y", label: "2 years", sub: "The foundation", prompt: "What foundations need to be built in the next 2 years?" },
+  { id: "1y", label: "This year", sub: "The commitment", prompt: "What will you commit to achieving this year to begin?" }
+];
+
+var STEPS = [
+  { id: "welcome", title: "Welcome" },
+  { id: "values", title: "What matters" },
+  { id: "domains", title: "Life domains" },
+  { id: "ideal", title: "Ideal day" },
+  { id: "horizons", title: "Time horizons" },
+  { id: "mission", title: "Your mission" },
+  { id: "summary", title: "Your vision" }
+];
+
+function VisionBuilder() {
+  var [step, setStep] = useState(0);
+  var [values, setValues] = useState([""]);
+  var [selectedDomains, setSelectedDomains] = useState([]);
+  var [idealDay, setIdealDay] = useState("");
+  var [horizonGoals, setHorizonGoals] = useState({});
+  var [mission, setMission] = useState("");
+  var [dontWant, setDontWant] = useState("");
+  var [animate, setAnimate] = useState(true);
+
+  useEffect(function() { setAnimate(true); var t = setTimeout(function() { setAnimate(false); }, 600); return function() { clearTimeout(t); }; }, [step]);
+
+  var next = function() { if (step < STEPS.length - 1) setStep(step + 1); };
+  var prev = function() { if (step > 0) setStep(step - 1); };
+
+  var toggleDomain = function(id) {
+    setSelectedDomains(function(p) {
+      return p.indexOf(id) >= 0 ? p.filter(function(d) { return d !== id; }) : p.length < 5 ? p.concat([id]) : p;
+    });
+  };
+
+  var setHorizonGoal = function(horizonId, domainId, val) {
+    setHorizonGoals(function(p) {
+      var key = horizonId + "-" + domainId;
+      var n = {};
+      Object.keys(p).forEach(function(k) { n[k] = p[k]; });
+      n[key] = val;
+      return n;
+    });
+  };
+
+  var exportVision = function() {
+    var lines = [];
+    lines.push("MY LIFE VISION");
+    lines.push("Generated with KONQR Vision Builder");
+    lines.push("Date: " + new Date().toLocaleDateString());
+    lines.push("");
+    lines.push("=== MISSION STATEMENT ===");
+    lines.push(mission || "(Not yet defined)");
+    lines.push("");
+    lines.push("=== CORE VALUES ===");
+    values.filter(function(v) { return v.trim(); }).forEach(function(v) { lines.push("- " + v); });
+    lines.push("");
+    lines.push("=== WHAT I DON'T WANT ===");
+    lines.push(dontWant || "(Not defined)");
+    lines.push("");
+    lines.push("=== MY IDEAL DAY ===");
+    lines.push(idealDay || "(Not defined)");
+    lines.push("");
+    lines.push("=== LIFE DOMAINS ===");
+    selectedDomains.forEach(function(dId) {
+      var dom = DOMAINS.find(function(d) { return d.id === dId; });
+      if (dom) lines.push("- " + dom.label);
+    });
+    lines.push("");
+    HORIZONS.forEach(function(h) {
+      lines.push("=== " + h.label.toUpperCase() + " VISION ===");
+      selectedDomains.forEach(function(dId) {
+        var dom = DOMAINS.find(function(d) { return d.id === dId; });
+        var val = horizonGoals[h.id + "-" + dId] || "";
+        if (dom && val.trim()) lines.push(dom.label + ": " + val);
+      });
+      lines.push("");
+    });
+    lines.push("---");
+    lines.push("Ready to konqr these goals? Get KONQR at konqr.app");
+    var blob = new Blob([lines.join("\n")], { type: "text/plain" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "my-vision-" + new Date().toISOString().slice(0, 10) + ".txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  var completedGoals = 0;
+  var totalGoals = selectedDomains.length * HORIZONS.length;
+  selectedDomains.forEach(function(dId) {
+    HORIZONS.forEach(function(h) {
+      if ((horizonGoals[h.id + "-" + dId] || "").trim()) completedGoals++;
+    });
+  });
+
+  var S = {
+    wrap: { fontFamily: "'Outfit', sans-serif", minHeight: "100vh", background: "#0B0F1A", color: "#E8E4DC", display: "flex", flexDirection: "column" },
+    inner: { maxWidth: 720, margin: "0 auto", padding: "24px 20px", width: "100%", boxSizing: "border-box", flex: 1 },
+    card: { background: "linear-gradient(135deg, #141824, #1A1F30)", borderRadius: 20, padding: "32px 28px", border: "1px solid rgba(255,255,255,0.06)", marginBottom: 20, opacity: animate ? 0 : 1, transform: animate ? "translateY(16px)" : "translateY(0)", transition: "opacity 0.5s ease, transform 0.5s ease" },
+    h1: { fontFamily: "'Playfair Display', serif", fontSize: 32, fontWeight: 800, margin: "0 0 8px", background: "linear-gradient(135deg, #F0C27F, #FC5C7D)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" },
+    h2: { fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 700, margin: "0 0 6px", color: "#F0C27F" },
+    h3: { fontSize: 15, fontWeight: 600, margin: "0 0 4px", color: "#F0C27F" },
+    sub: { fontSize: 14, color: "#8B8A85", lineHeight: 1.6, margin: "0 0 20px" },
+    input: { width: "100%", padding: "12px 16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#E8E4DC", fontSize: 15, fontFamily: "inherit", boxSizing: "border-box", outline: "none" },
+    textarea: { width: "100%", padding: "14px 16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#E8E4DC", fontSize: 15, fontFamily: "inherit", boxSizing: "border-box", outline: "none", resize: "vertical", lineHeight: 1.6 },
+    btn: { padding: "12px 28px", borderRadius: 12, border: "none", fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "all 0.2s" },
+    btnPrimary: { background: "linear-gradient(135deg, #F0C27F, #FC5C7D)", color: "#0B0F1A" },
+    btnSecondary: { background: "rgba(255,255,255,0.08)", color: "#E8E4DC", border: "1px solid rgba(255,255,255,0.12)" },
+    progress: { display: "flex", gap: 6, marginBottom: 28 },
+    dot: { height: 4, borderRadius: 2, flex: 1, transition: "all 0.3s" },
+    domain: { padding: "14px 16px", borderRadius: 14, cursor: "pointer", border: "1px solid rgba(255,255,255,0.08)", transition: "all 0.2s", display: "flex", alignItems: "center", gap: 12, marginBottom: 8 },
+    tag: { display: "inline-block", padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 600, marginRight: 6, marginBottom: 4 }
+  };
+
+  return (
+    <div style={S.wrap}>
+      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet" />
+      <div style={S.inner}>
+        {/* Header */}
+        <div style={{ textAlign: "center", padding: "20px 0 10px" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.15em", color: "#F0C27F", marginBottom: 8 }}>KONQR VISION BUILDER</div>
+          <div style={{ fontSize: 11, color: "#666" }}>Free tool — Define your life vision</div>
+        </div>
+
+        {/* Progress */}
+        <div style={S.progress}>
+          {STEPS.map(function(s, i) {
+            return <div key={s.id} style={{ ...S.dot, background: i <= step ? "linear-gradient(135deg, #F0C27F, #FC5C7D)" : "rgba(255,255,255,0.08)" }} />;
+          })}
+        </div>
+
+        {/* Step Content */}
+        <div style={S.card}>
+          {step === 0 && (
+            <div>
+              <h1 style={S.h1}>What does your ideal life look like?</h1>
+              <p style={S.sub}>Most people know they want "more" — more freedom, more meaning, more time. But few take the time to define exactly what that looks like. This 10-minute guided journey will help you build a clear vision across every area of your life — from this year to 10 years out.</p>
+              <div style={{ background: "rgba(240,194,127,0.08)", borderRadius: 14, padding: "16px 20px", border: "1px solid rgba(240,194,127,0.15)", marginBottom: 20 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#F0C27F", marginBottom: 8 }}>How this works</div>
+                <div style={{ fontSize: 13, color: "#999", lineHeight: 1.7 }}>
+                  {"1. Discover what matters most to you\n2. Choose your key life domains\n3. Envision your ideal day\n4. Set goals across 1, 2, 5, and 10 year horizons\n5. Craft your personal mission statement\n6. Export your complete vision document".split("\n").map(function(line, i) { return <div key={i}>{line}</div>; })}
+                </div>
+              </div>
+              <p style={{ ...S.sub, fontSize: 13, fontStyle: "italic" }}>No account needed. Your answers stay in your browser. Export when you are ready.</p>
+            </div>
+          )}
+
+          {step === 1 && (
+            <div>
+              <h2 style={S.h2}>What matters most to you?</h2>
+              <p style={S.sub}>Before setting goals, let us ground ourselves. What values drive your decisions? These are not goals — they are the principles you want to live by. Think: freedom, creativity, family, adventure, integrity, growth, independence...</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+                {values.map(function(v, i) {
+                  return (
+                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <span style={{ fontSize: 13, color: "#F0C27F", fontWeight: 600, width: 20 }}>{i + 1}</span>
+                      <input value={v} onChange={function(e) { var n = values.slice(); n[i] = e.target.value; setValues(n); }} style={S.input} placeholder={"A value that guides your life..."} />
+                      {values.length > 1 && <button onClick={function() { setValues(values.filter(function(_, j) { return j !== i; })); }} style={{ ...S.btn, ...S.btnSecondary, padding: "8px 12px", fontSize: 13 }}>x</button>}
+                    </div>
+                  );
+                })}
+              </div>
+              {values.length < 7 && <button onClick={function() { setValues(values.concat([""])); }} style={{ ...S.btn, ...S.btnSecondary, fontSize: 13, marginBottom: 20 }}>+ Add value</button>}
+              <div style={{ marginTop: 12 }}>
+                <div style={S.h3}>What do you NOT want?</div>
+                <p style={{ ...S.sub, fontSize: 13, marginBottom: 8 }}>Sometimes knowing what you want to avoid is clearer than knowing what you want. What does a life you would hate look like?</p>
+                <textarea value={dontWant} onChange={function(e) { setDontWant(e.target.value); }} rows={3} style={S.textarea} placeholder={"e.g. Working for someone else forever, being stuck in one place, financial stress, no time for family..."} />
+              </div>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div>
+              <h2 style={S.h2}>Choose your life domains</h2>
+              <p style={S.sub}>Which areas of life matter most to you right now? Select 3 to 5 domains that you want to focus your vision on. You can always add more later.</p>
+              <div>
+                {DOMAINS.map(function(d) {
+                  var sel = selectedDomains.indexOf(d.id) >= 0;
+                  return (
+                    <div key={d.id} onClick={function() { toggleDomain(d.id); }}
+                      style={{ ...S.domain, background: sel ? "rgba(240,194,127,0.1)" : "rgba(255,255,255,0.02)", borderColor: sel ? "rgba(240,194,127,0.3)" : "rgba(255,255,255,0.08)" }}>
+                      <span style={{ fontSize: 22 }}>{d.icon}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{d.label}</div>
+                        <div style={{ fontSize: 12, color: "#777" }}>{d.prompt}</div>
+                      </div>
+                      <div style={{ width: 22, height: 22, borderRadius: 7, border: "2px solid " + (sel ? "#F0C27F" : "rgba(255,255,255,0.15)"), background: sel ? "#F0C27F" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "#0B0F1A", fontWeight: 700 }}>{sel ? "\u2713" : ""}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 12, color: "#666", marginTop: 10 }}>{selectedDomains.length + " of 3-5 selected"}</div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div>
+              <h2 style={S.h2}>Describe your ideal Tuesday</h2>
+              <p style={S.sub}>Not a holiday. Not a special occasion. Just a regular Tuesday — but in your ideal life. Walk through it from waking up to going to sleep. Where are you? What are you doing? Who is with you? What does the day feel like?</p>
+              <textarea value={idealDay} onChange={function(e) { setIdealDay(e.target.value); }} rows={10} style={S.textarea} placeholder={"I wake up at 6:30 in my apartment overlooking... I start the morning with... By 9am I'm working on... At lunch I... The afternoon is spent... In the evening..."} />
+              <p style={{ fontSize: 12, color: "#666", marginTop: 10, fontStyle: "italic" }}>This exercise reveals what you truly want more than any goal-setting framework. Your ideal day contains your real priorities.</p>
+            </div>
+          )}
+
+          {step === 4 && (
+            <div>
+              <h2 style={S.h2}>Vision across time</h2>
+              <p style={S.sub}>Now work backwards from 10 years. Start with the big dream, then define what must be true at each milestone to get there.</p>
+              {HORIZONS.map(function(h) {
+                return (
+                  <div key={h.id} style={{ marginBottom: 24 }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
+                      <span style={{ ...S.tag, background: h.id === "10y" ? "rgba(252,92,125,0.15)" : h.id === "5y" ? "rgba(240,194,127,0.15)" : h.id === "2y" ? "rgba(100,200,255,0.12)" : "rgba(100,255,150,0.12)", color: h.id === "10y" ? "#FC5C7D" : h.id === "5y" ? "#F0C27F" : h.id === "2y" ? "#64C8FF" : "#64FF96" }}>{h.label}</span>
+                      <span style={{ fontSize: 12, color: "#777" }}>{h.sub}</span>
+                    </div>
+                    <p style={{ fontSize: 12, color: "#999", margin: "4px 0 10px", fontStyle: "italic" }}>{h.prompt}</p>
+                    {selectedDomains.map(function(dId) {
+                      var dom = DOMAINS.find(function(d) { return d.id === dId; });
+                      if (!dom) return null;
+                      return (
+                        <div key={dId} style={{ marginBottom: 8 }}>
+                          <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>{dom.icon + " " + dom.label}</div>
+                          <input value={horizonGoals[h.id + "-" + dId] || ""} onChange={function(e) { setHorizonGoal(h.id, dId, e.target.value); }} style={{ ...S.input, fontSize: 14 }} placeholder={"In " + h.label + ", my " + dom.label.toLowerCase() + " looks like..."} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              <div style={{ fontSize: 12, color: "#666" }}>{completedGoals + " of " + totalGoals + " goals defined"}</div>
+            </div>
+          )}
+
+          {step === 5 && (
+            <div>
+              <h2 style={S.h2}>Craft your mission statement</h2>
+              <p style={S.sub}>Look at what you have written. Your values, your ideal day, your 10-year vision. Now distill it into one powerful paragraph — who are you becoming, and why?</p>
+              <div style={{ background: "rgba(240,194,127,0.06)", borderRadius: 14, padding: "14px 18px", border: "1px solid rgba(240,194,127,0.1)", marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: "#F0C27F", fontWeight: 600, marginBottom: 8 }}>Your values for reference</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {values.filter(function(v) { return v.trim(); }).map(function(v, i) { return <span key={i} style={{ ...S.tag, background: "rgba(240,194,127,0.12)", color: "#F0C27F" }}>{v}</span>; })}
+                </div>
+              </div>
+              <div style={{ background: "rgba(252,92,125,0.06)", borderRadius: 14, padding: "14px 18px", border: "1px solid rgba(252,92,125,0.1)", marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: "#FC5C7D", fontWeight: 600, marginBottom: 8 }}>Your 10-year vision snapshot</div>
+                {selectedDomains.map(function(dId) {
+                  var dom = DOMAINS.find(function(d) { return d.id === dId; });
+                  var val = horizonGoals["10y-" + dId] || "";
+                  if (!dom || !val.trim()) return null;
+                  return <div key={dId} style={{ fontSize: 12, color: "#aaa", marginBottom: 3 }}>{dom.icon + " " + val}</div>;
+                })}
+              </div>
+              <p style={{ fontSize: 12, color: "#777", marginBottom: 8 }}>Try starting with: "I am building a life where..." or "My purpose is to..."</p>
+              <textarea value={mission} onChange={function(e) { setMission(e.target.value); }} rows={5} style={S.textarea} placeholder={"My mission is..."} />
+            </div>
+          )}
+
+          {step === 6 && (
+            <div>
+              <h2 style={S.h2}>Your vision is ready</h2>
+              <p style={S.sub}>You have done something most people never do — define what you actually want from life. Here is your complete vision.</p>
+
+              {mission && (
+                <div style={{ background: "linear-gradient(135deg, rgba(240,194,127,0.1), rgba(252,92,125,0.08))", borderRadius: 16, padding: "20px 24px", border: "1px solid rgba(240,194,127,0.2)", marginBottom: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#F0C27F", letterSpacing: "0.1em", marginBottom: 8 }}>MISSION</div>
+                  <div style={{ fontSize: 16, lineHeight: 1.7, color: "#E8E4DC" }}>{mission}</div>
+                </div>
+              )}
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
+                {HORIZONS.map(function(h) {
+                  var count = 0;
+                  selectedDomains.forEach(function(dId) { if ((horizonGoals[h.id + "-" + dId] || "").trim()) count++; });
+                  return (
+                    <div key={h.id} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 14, padding: "14px 16px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#F0C27F" }}>{h.label}</div>
+                      <div style={{ fontSize: 11, color: "#777", marginBottom: 6 }}>{count + " goals set"}</div>
+                      {selectedDomains.map(function(dId) {
+                        var dom = DOMAINS.find(function(d) { return d.id === dId; });
+                        var val = horizonGoals[h.id + "-" + dId] || "";
+                        if (!dom || !val.trim()) return null;
+                        return <div key={dId} style={{ fontSize: 11, color: "#aaa", marginBottom: 3 }}>{dom.icon + " " + val}</div>;
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+                <button onClick={exportVision} style={{ ...S.btn, ...S.btnPrimary, flex: 1 }}>Export my vision</button>
+              </div>
+
+              <div style={{ background: "linear-gradient(135deg, #1A1F30, #252B3D)", borderRadius: 16, padding: "24px", border: "1px solid rgba(240,194,127,0.15)", textAlign: "center" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#F0C27F", letterSpacing: "0.12em", marginBottom: 10 }}>WHAT COMES NEXT?</div>
+                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 800, marginBottom: 10, background: "linear-gradient(135deg, #F0C27F, #FC5C7D)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Turn this vision into action with KONQR</div>
+                <div style={{ fontSize: 13, color: "#999", lineHeight: 1.7, marginBottom: 16 }}>Import your vision directly into KONQR, where AI scheduling, weekly reviews, and progress tracking turn your 10-year dream into what you do at 9am Tuesday.</div>
+                <button style={{ ...S.btn, ...S.btnPrimary, fontSize: 16, padding: "14px 40px" }}>Get KONQR</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Navigation */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 30 }}>
+          {step > 0 ? <button onClick={prev} style={{ ...S.btn, ...S.btnSecondary }}>Back</button> : <div />}
+          <div style={{ fontSize: 12, color: "#555" }}>{STEPS[step].title + " (" + (step + 1) + "/" + STEPS.length + ")"}</div>
+          {step < STEPS.length - 1 ? <button onClick={next} style={{ ...S.btn, ...S.btnPrimary }}>{step === 0 ? "Begin" : "Continue"}</button> : <div />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+var root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(VisionBuilder));
+</script>
+</body>
+</html>

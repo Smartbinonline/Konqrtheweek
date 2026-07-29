@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120" width="400" height="120">
+  <!-- KONQR BOOKS Logo - Dark background version (white text) -->
+  
+  <!-- Double chevron arrow mark -->
+  <g transform="translate(10, 10)">
+    <!-- Outer chevron -->
+    <path d="M0,50 L30,10 L38,10 L38,18 L14,50 L38,82 L38,90 L30,90 Z" fill="#FFFFFF" />
+    <!-- Inner chevron -->
+    <path d="M22,50 L52,10 L60,10 L60,18 L36,50 L60,82 L60,90 L52,90 Z" fill="#FFFFFF" />
+  </g>
+  
+  <!-- KONQR text -->
+  <text x="88" y="68" font-family="Montserrat, 'Arial Black', sans-serif" font-weight="900" font-size="52" fill="#FFFFFF" letter-spacing="3">KONQR</text>
+  
+  <!-- BOOKS text -->
+  <text x="90" y="100" font-family="Montserrat, 'Arial Black', sans-serif" font-weight="700" font-size="28" fill="#FFFFFF" letter-spacing="8">BOOKS</text>
+</svg>

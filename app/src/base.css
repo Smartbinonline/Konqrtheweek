@@ -1,0 +1,16 @@
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body, #root { min-height: 100vh; }
+body { background: #06080C; font-family: 'Instrument Sans', 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; color: #E7E9EC; }
+a { color: #C6CCD4; text-decoration: none; }
+a:hover { color: #FFFFFF; }
+input, textarea, select, button { font-family: inherit; }
+input, textarea, select { color: #E7E9EC; }
+option { background: #14181F; color: #E7E9EC; }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+@keyframes lq1 { 0% { transform: translate3d(-6%,-4%,0) scale(1.1); } 50% { transform: translate3d(10%,7%,0) scale(1.32); } 100% { transform: translate3d(-6%,-4%,0) scale(1.1); } }
+@keyframes lq2 { 0% { transform: translate3d(8%,3%,0) scale(1.22); } 50% { transform: translate3d(-12%,-9%,0) scale(1); } 100% { transform: translate3d(8%,3%,0) scale(1.22); } }
+@keyframes lq3 { 0% { transform: translate3d(0,8%,0) scale(1); } 50% { transform: translate3d(7%,-11%,0) scale(1.28); } 100% { transform: translate3d(0,8%,0) scale(1); } }
+@keyframes lq4 { 0% { transform: translate3d(-4%,6%,0) scale(1.15); } 50% { transform: translate3d(6%,-6%,0) scale(0.95); } 100% { transform: translate3d(-4%,6%,0) scale(1.15); } }
