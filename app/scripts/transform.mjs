@@ -2,7 +2,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import * as cheerio from "cheerio";
 
-const raw = readFileSync(new URL("../../konqr-src/konqr_app_markup.html", import.meta.url), "utf8");
+const raw = readFileSync(new URL("../template.html", import.meta.url), "utf8");
 // strip helmet block and trailing </x-dc>
 const afterHelmet = raw.slice(raw.indexOf("</helmet>") + "</helmet>".length).replace(/<\/x-dc>\s*$/, "");
 

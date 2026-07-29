@@ -38,7 +38,7 @@ export default class App extends PlannerLogic {
             <span style={css("font-size:11px;color:rgba(231,233,236,.45)")}>
               {v.clockLabel}
             </span>
-            <button onClick={v.onFilePill} title="Data file sync" style={css("padding:5px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);color:{{ filePillColor }};font-size:10.5px;cursor:pointer")}>
+            <button onClick={v.onFilePill} title="Cloud sync" style={css("padding:5px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);color:{{ filePillColor }};font-size:10.5px;cursor:pointer")}>
               {v.filePill}
             </button>
             <button onClick={v.onReset} style={css("padding:5px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);color:rgba(231,233,236,.5);font-size:10.5px;cursor:pointer")}>
@@ -695,7 +695,7 @@ export default class App extends PlannerLogic {
                 </div>
                 <div style={css("background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);backdrop-filter:blur(20px);border-radius:16px;padding:18px")}>
                   <label style={css("font-size:9.5px;font-weight:700;letter-spacing:.14em;color:rgba(231,233,236,.38);display:block;margin-bottom:10px")}>
-                    DATA SYNC
+                    CLOUD SYNC
                   </label>
                   <div style={css("display:flex;gap:10px")}>
                     <div style={css("width:100%;margin-bottom:10px")}>
@@ -705,12 +705,16 @@ export default class App extends PlannerLogic {
                       <div style={css("font-size:11px;color:rgba(231,233,236,.5);line-height:1.5;margin-bottom:8px")}>
                         {v.prv.fileHelp}
                       </div>
-                      <button onClick={v.prv.onConnectFile} style={v.primaryBtnStyle}>
-                        Connect / Load file
+                      <button onClick={v.prv.onSyncBtn} style={v.primaryBtnStyle}>
+                        {v.prv.syncBtnLabel}
                       </button>
-                      <button onClick={v.prv.onSaveFile} style={css("padding:7px 13px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#E7E9EC;font-size:12px;cursor:pointer;margin-left:6px")}>
-                        Save
-                      </button>
+                      {(v.prv.authed) ? (
+                        <React.Fragment>
+                        <button onClick={v.prv.onSignOut} style={css("padding:7px 13px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:rgba(255,190,190,.9);font-size:12px;cursor:pointer;margin-left:6px")}>
+                          Sign out
+                        </button>
+                        </React.Fragment>
+                      ) : null}
                     </div>
                     <button onClick={v.prv.onExport} style={v.primaryBtnStyle}>
                       Export
@@ -980,6 +984,48 @@ export default class App extends PlannerLogic {
                       </button>
                       </React.Fragment>
                     ) : null}
+                    <button onClick={v.onCloseModal} style={css("padding:8px 14px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#E7E9EC;font-size:12.5px;cursor:pointer")}>
+                      Cancel
+                    </button>
+                    <button onClick={v.modal.onSave} style={v.primaryBtnStyle}>
+                      {v.modal.saveLabel}
+                    </button>
+                  </div>
+                </div>
+                </React.Fragment>
+              ) : null}
+              {(v.modal.isLogin) ? (
+                <React.Fragment>
+                <div style={css("display:flex;flex-direction:column;gap:13px")}>
+                  <p style={css("font-size:12.5px;color:rgba(231,233,236,.55);line-height:1.5")}>
+                    {v.modal.help}
+                  </p>
+                  <div>
+                    <label style={css("font-size:9.5px;font-weight:700;letter-spacing:.14em;color:rgba(231,233,236,.42);display:block;margin-bottom:5px")}>
+                      SERVER URL
+                    </label>
+                    <input value={v.modal.d.url ?? ""} onChange={v.modal.onUrl} placeholder="https://your-name.duckdns.org" style={css("width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.06);font-size:14px")} />
+                  </div>
+                  <div>
+                    <label style={css("font-size:9.5px;font-weight:700;letter-spacing:.14em;color:rgba(231,233,236,.42);display:block;margin-bottom:5px")}>
+                      EMAIL
+                    </label>
+                    <input type="email" value={v.modal.d.email ?? ""} onChange={v.modal.onEmail} style={css("width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.06);font-size:14px")} />
+                  </div>
+                  <div>
+                    <label style={css("font-size:9.5px;font-weight:700;letter-spacing:.14em;color:rgba(231,233,236,.42);display:block;margin-bottom:5px")}>
+                      PASSWORD
+                    </label>
+                    <input type="password" value={v.modal.d.pass ?? ""} onChange={v.modal.onPass} style={css("width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.06);font-size:14px")} />
+                  </div>
+                  {(v.modal.err) ? (
+                    <React.Fragment>
+                    <div style={v.modal.errStyle}>
+                      {v.modal.err}
+                    </div>
+                    </React.Fragment>
+                  ) : null}
+                  <div style={css("display:flex;gap:9px;justify-content:flex-end")}>
                     <button onClick={v.onCloseModal} style={css("padding:8px 14px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#E7E9EC;font-size:12.5px;cursor:pointer")}>
                       Cancel
                     </button>

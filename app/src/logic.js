@@ -1,4 +1,5 @@
 import React from "react";
+import { cloud } from "./sync.js";
 
 export class PlannerLogic extends React.Component {
   DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
@@ -74,7 +75,7 @@ export class PlannerLogic extends React.Component {
     isMob:false, isPortrait:false, navHover:null, drawerOpen:false, hoverTask:null,
     toast:null, undoStack:[], modal:null, draft:null,
     taskFilter:"all", groupFilter:"all", missionEdit:false, missionDraft:"", goalDrafts:[],
-    prefsEdit:false, prefsDraft:null
+    prefsEdit:false, prefsDraft:null, syncStatus:"off"
   };
 
   /* ---------- utils ---------- */
@@ -90,8 +91,7 @@ export class PlannerLogic extends React.Component {
   wk(){ return this.getMon(new Date(this.state.anchorMs)).toISOString().slice(0,10); }
   ld(k,f){ try{ var v=localStorage.getItem("konqr_"+k); return v!==null?JSON.parse(v):f; }catch(e){ return f; } }
   sv(k,d){ try{ localStorage.setItem("konqr_"+k,JSON.stringify(d)); }catch(e){} }
-  /* ---------- cloud data file sync ---------- */
-  hasFS(){ return "showOpenFilePicker" in window; }
+  /* ---------- cloud sync (PocketBase) ---------- */
   buildSnapshot(){
     var s=this.state;
     return { app:"KONQR", version:13, savedAt:new Date().toISOString(),
@@ -101,128 +101,101 @@ export class PlannerLogic extends React.Component {
   applySnapshot(d){
     var p={};
     ["tasks","groups","goals","mission","cal","appts","prefs","wgoals"].forEach(function(k){ if(d[k]!==undefined) p[k]=d[k]; });
+    this._skipNextPush=true;
     this.setState(p);
   }
-  scheduleFileSave(){
-    if(!this._fileHandle) return;
-    var self=this; this._fileDirty=true;
-    if(this.state.fileStatus!=="dirty"&&this.state.fileStatus!=="blocked") this.setState({fileStatus:"dirty"});
-    clearTimeout(this._ft);
-    this._ft=setTimeout(function(){ self.writeDataFile(); },900);
+  scheduleCloudSave(){
+    if(!cloud.isAuthed()) return;
+    var self=this; this._syncDirty=true;
+    if(this.state.syncStatus!=="dirty") this.setState({syncStatus:"dirty"});
+    clearTimeout(this._st);
+    this._st=setTimeout(function(){ self.cloudPush(); },900);
   }
-  async writeDataFile(){
-    if(!this._fileHandle) return;
+  async cloudPush(){
+    if(!cloud.isAuthed()) return;
     try{
-      var w=await this._fileHandle.createWritable();
-      await w.write(JSON.stringify(this.buildSnapshot(),null,2));
-      await w.close();
-      this._fileDirty=false;
-      this._fileRetried=false;
-      if(this.state.fileStatus!=="on") this.setState({fileStatus:"on"});
+      await cloud.push(this.buildSnapshot(), this.state.wgoals);
+      this._syncDirty=false;
+      if(this.state.syncStatus!=="on") this.setState({syncStatus:"on"});
     }catch(e){
-      var self=this;
-      if(!this._fileRetried){
-        this._fileRetried=true;
-        clearTimeout(this._ft);
-        this._ft=setTimeout(function(){ self.writeDataFile(); },1600);
-      } else {
-        this._fileRetried=false;
-        if(this.state.fileStatus!=="blocked") this.setState({fileStatus:"blocked"});
-      }
+      if(this.state.syncStatus!=="error") this.setState({syncStatus:"error"});
     }
   }
-  async connectDataFile(){
-    var self=this;
-    if(this.hasFS()){
-      try{
-        var res=await window.showOpenFilePicker({types:[{description:"KONQR data",accept:{"application/json":[".json"]}}]});
-        var h=res[0]; this._fileHandle=h;
-        try{ if(h.requestPermission) await h.requestPermission({mode:"readwrite"}); }catch(e){}
-        var f=await h.getFile(); var txt=await f.text();
-        if(txt && txt.trim().length){
-          try{ this.applySnapshot(JSON.parse(txt)); this.toast("Loaded from "+f.name+" \u2014 autosave on"); }
-          catch(e){ this.toast("File is not valid JSON \u2014 it will be overwritten on next change"); }
-        } else { this.toast("Connected "+f.name+" \u2014 autosave on"); }
-        this._fileDirty=false;
-        this.setState({fileStatus:"on", fileName:f.name});
-      }catch(e){
-        if(e && e.name==="AbortError"){
-          this.toast("No file yet \u2014 choose where to create konqr-data.json");
-          this.saveDataFile();
-        }
-      }
-    } else {
-      var input=document.createElement("input"); input.type="file"; input.accept=".json,application/json";
-      input.onchange=function(e){
-        var f=e.target.files[0]; if(!f) return;
-        var r=new FileReader();
-        r.onload=function(ev){
-          try{ self.applySnapshot(JSON.parse(ev.target.result)); self.setState({fileStatus:"loaded", fileName:f.name}); self.toast("Loaded "+f.name); }
-          catch(err){ self.toast("Load failed \u2014 not valid JSON"); }
-        };
-        r.readAsText(f);
-      };
-      input.click();
+  async cloudPull(){
+    if(!cloud.isAuthed()) return;
+    try{
+      var d=await cloud.pull();
+      if(d){ clearTimeout(this._st); this.applySnapshot(d); this._syncDirty=false; }
+      else{ await cloud.push(this.buildSnapshot(), this.state.wgoals); }
+      if(this.state.syncStatus!=="on") this.setState({syncStatus:"on"});
+    }catch(e){
+      this.setState({syncStatus:"error"});
     }
   }
-  async saveDataFile(){
-    if(this._fileHandle){ this.writeDataFile(); this.toast("Saved"); return; }
-    if(this.hasFS()){
-      try{
-        var h=await window.showSaveFilePicker({suggestedName:"konqr-data.json",types:[{description:"KONQR data",accept:{"application/json":[".json"]}}]});
-        this._fileHandle=h;
-        try{ if(h.requestPermission) await h.requestPermission({mode:"readwrite"}); }catch(e){}
-        await this.writeDataFile();
-        this.setState({fileName:h.name||"konqr-data.json"});
-        this.toast("Saved \u2014 autosave on");
-      }catch(e){}
-    } else {
-      var data=JSON.stringify(this.buildSnapshot(),null,2);
-      var url=URL.createObjectURL(new Blob([data],{type:"application/json"}));
-      var a=document.createElement("a"); a.href=url; a.download="konqr-data.json"; a.click(); URL.revokeObjectURL(url);
-      this.toast("Downloaded copy \u2014 replace the one in your OneDrive folder");
+  openLoginModal(){
+    this.setState({modal:{kind:"login"},draft:{url:cloud.url()||"https://",email:"",pass:"",err:null,busy:false}});
+  }
+  async doLogin(){
+    var d=this.state.draft; if(!d||!d.url||!d.email||!d.pass) return;
+    this.patchDraft({busy:true,err:null});
+    try{
+      await cloud.login(d.url,d.email,d.pass);
+      this.setState({modal:null,draft:null});
+      this.toast("Signed in \u2014 syncing\u2026");
+      await this.cloudPull();
+    }catch(e){
+      var msg = e && e.status===400 ? "Wrong email or password" : "Cannot reach server \u2014 check the URL";
+      this.patchDraft({busy:false,err:msg});
     }
   }
-  filePillLabel(){
-    var st=this.state.fileStatus;
-    if(st==="on") return "\u25CF "+(this.state.fileName||"Synced");
+  signOut(){
+    cloud.logout();
+    this.setState({syncStatus:"off"});
+    this.toast("Signed out \u2014 this device keeps its local copy");
+  }
+  syncPillLabel(){
+    var st=this.state.syncStatus;
+    if(st==="on") return "\u25CF Synced";
     if(st==="dirty") return "\u25CF Saving\u2026";
-    if(st==="blocked") return "\u25CF Blocked \u2014 tap to retry";
-    if(st==="loaded") return "\u25CF "+(this.state.fileName||"Loaded")+" (copy)";
-    return "\u25CB Data file";
+    if(st==="error") return "\u25CF Retry sync";
+    return "\u25CB Sign in";
   }
-  filePillColor(){
-    var st=this.state.fileStatus;
+  syncPillColor(){
+    var st=this.state.syncStatus;
     if(st==="on") return "#22C55E";
     if(st==="dirty") return "#F59E0B";
-    if(st==="blocked") return "#EF4444";
-    if(st==="loaded") return "#38BDF8";
+    if(st==="error") return "#EF4444";
     return "rgba(231,233,236,.45)";
   }
-  onFilePill(){
-    if(this.state.fileStatus==="blocked"){ this.writeDataFile(); }
-    else if(!this._fileHandle){ this.connectDataFile(); }
-    else { this.saveDataFile(); }
+  onSyncPill(){
+    if(!cloud.isAuthed()){ this.openLoginModal(); return; }
+    if(this._syncDirty||this.state.syncStatus==="error"){ this.cloudPush(); }
+    else { this.cloudPull(); this.toast("Refreshed from cloud"); }
   }
 
   toast(m){ var self=this; this.setState({toast:m}); clearTimeout(this._tt); this._tt=setTimeout(function(){ self.setState({toast:null}); },3000); }
 
   componentDidMount(){
     var self=this;
+    this._skipNextPush=true; /* initial load from localStorage must not trigger a cloud push (would race the pull) */
     this.setState({
       tasks:this.ld("v13-tasks",this.ST), groups:this.ld("v13-groups",this.SG), goals:this.ld("v13-goals",this.SGo),
       mission:this.ld("v13-mission",this.SEED_M), cal:this.ld("v13-cal",{}), appts:this.ld("v13-appts",this.SA),
-      prefs:this.ld("v13-prefs",this.SPr), wgoals:this.ld("v13-wgoals",{}) || {}, loaded:true, fileStatus:"off", fileName:"",
+      prefs:this.ld("v13-prefs",this.SPr), wgoals:this.ld("v13-wgoals",{}) || {}, loaded:true,
+      syncStatus: cloud.isAuthed() ? "on" : "off",
       isMob: window.innerWidth < 820, isPortrait: window.innerHeight > window.innerWidth
     });
     this._rz=function(){ self.setState({isMob: window.innerWidth < 820, isPortrait: window.innerHeight > window.innerWidth}); };
     window.addEventListener("resize",this._rz);
     this._iv=setInterval(function(){ self.setState({nowTick:Date.now()}); },30000);
-    this._bu=function(e){ if(self._fileDirty && self._fileHandle){ self.writeDataFile(); } };
+    this._bu=function(e){ if(self._syncDirty && cloud.isAuthed()){ self.cloudPush(); } };
     window.addEventListener("beforeunload",this._bu);
-    setTimeout(function(){ if(!self._fileHandle && self.hasFS()){ self.toast("Tip: click \u25CB Data file (top right) to load your synced data"); } },1200);
+    this._vis=function(){ if(document.visibilityState==="visible" && cloud.isAuthed() && !self._syncDirty){ self.cloudPull(); } };
+    document.addEventListener("visibilitychange",this._vis);
+    if(cloud.isAuthed()){ setTimeout(function(){ self.cloudPull(); },300); }
+    else { setTimeout(function(){ self.toast("Tip: click \u25CB Sign in (top right) to sync across your devices"); },1200); }
   }
-  componentWillUnmount(){ window.removeEventListener("resize",this._rz); window.removeEventListener("beforeunload",this._bu); clearInterval(this._iv); clearTimeout(this._tt); clearTimeout(this._ft); }
+  componentWillUnmount(){ window.removeEventListener("resize",this._rz); window.removeEventListener("beforeunload",this._bu); document.removeEventListener("visibilitychange",this._vis); clearInterval(this._iv); clearTimeout(this._tt); clearTimeout(this._st); }
   componentDidUpdate(pp, ps){
     if(!this.state.loaded) return;
     var s=this.state;
@@ -230,7 +203,10 @@ export class PlannerLogic extends React.Component {
     this.sv("v13-mission",s.mission); this.sv("v13-cal",s.cal); this.sv("v13-appts",s.appts);
     this.sv("v13-prefs",s.prefs); this.sv("v13-wgoals",s.wgoals);
     var dataChanged = !ps || ps.tasks!==s.tasks || ps.groups!==s.groups || ps.goals!==s.goals || ps.mission!==s.mission || ps.cal!==s.cal || ps.appts!==s.appts || ps.prefs!==s.prefs || ps.wgoals!==s.wgoals;
-    if(dataChanged) this.scheduleFileSave();
+    if(dataChanged){
+      if(this._skipNextPush){ this._skipNextPush=false; }
+      else this.scheduleCloudSave();
+    }
   }
 
   /* ---------- styling helpers ---------- */
@@ -917,14 +893,15 @@ export class PlannerLogic extends React.Component {
       }),
       onExport:function(){ self.exportData(); },
       onImport:function(){ self.importData(); },
-      onConnectFile:function(){ self.connectDataFile(); },
-      onSaveFile:function(){ self.saveDataFile(); },
-      fileStatusText:self.filePillLabel(),
-      fileStatusColor:self.filePillColor(),
-      fileHelp:(self.hasFS()
-        ? "First time: click Save to create konqr-data.json in your OneDrive data folder. After that, Connect it once per session and every change autosaves straight to it."
-        : "This browser cannot write files directly. Load the JSON from your OneDrive app, and Save downloads an updated copy to put back."),
-      fsAvailable:self.hasFS()
+      authed:cloud.isAuthed(),
+      fileStatusText:self.syncPillLabel(),
+      fileStatusColor:self.syncPillColor(),
+      fileHelp:(cloud.isAuthed()
+        ? "Signed in as "+cloud.email()+" · "+(cloud.url()||"")+". Every change saves to your server automatically; other devices pick it up when opened or refreshed."
+        : "Sign in to your KONQR server to sync tasks, calendar and goals across all your devices. Until then everything is stored on this device only."),
+      syncBtnLabel:cloud.isAuthed()?"Sync now":"Sign in",
+      onSyncBtn:function(){ if(cloud.isAuthed()){ self.cloudPush(); self.toast("Synced"); } else self.openLoginModal(); },
+      onSignOut:function(){ self.signOut(); }
     };
 
     /* modal */
@@ -1015,6 +992,18 @@ export class PlannerLogic extends React.Component {
           onAddPart:function(){ self.setState(function(st){ var ps=st.draft.parts.concat([{name:(st.draft.parent.name||"Part")+" - Part "+(st.draft.parts.length+1),hours:1}]); return {draft:Object.assign({},st.draft,{parts:ps})}; }); },
           onSave:function(){ self.createSubTasks(); }
         };
+      } else if(kind==="login"){
+        modal={
+          title:"Sign in to KONQR Cloud", isLogin:true, d:d,
+          saveLabel:d.busy?"Signing in…":"Sign in",
+          err:d.err||null,
+          errStyle:{borderRadius:10,padding:"9px 12px",fontSize:12,background:"rgba(220,38,38,.16)",border:"1px solid rgba(220,38,38,.45)",color:"#FFB4B4"},
+          help:"Your server address, then the email + password of your KONQR account. One sign-in per device.",
+          onUrl:function(e){ self.patchDraft({url:e.target.value}); },
+          onEmail:function(e){ self.patchDraft({email:e.target.value}); },
+          onPass:function(e){ self.patchDraft({pass:e.target.value}); },
+          onSave:function(){ if(!d.busy) self.doLogin(); }
+        };
       }
     }
 
@@ -1035,9 +1024,9 @@ export class PlannerLogic extends React.Component {
       navItems:navItems,
       onToggleSide:function(){ self.setState({sideOpen:!s.sideOpen}); },
       onReset:function(){ self.resetData(); },
-      filePill:self.filePillLabel(),
-      filePillColor:self.filePillColor(),
-      onFilePill:function(){ self.onFilePill(); },
+      filePill:self.syncPillLabel(),
+      filePillColor:self.syncPillColor(),
+      onFilePill:function(){ self.onSyncPill(); },
       isCalendar:s.view==="calendar", isMission:s.view==="mission", isGroups:s.view==="groups",
       isTasks:s.view==="tasks", isPriority:s.view==="priority", isAppts:s.view==="appointments", isPrefs:s.view==="preferences",
       primaryBtnStyle:primaryBtnStyle,
