@@ -336,11 +336,15 @@ export class PlannerLogic extends React.Component {
       this.setState({modal:{kind:"split"},draft:{parent:payload,parts:parts,total:hrs}});
       return;
     }
+    var self=this;
     var s=this.state, old=s.tasks.find(function(t){ return t.id===payload.id; });
     var tid=payload.id||this.uid();
     var updated = (payload.id&&old) ? s.tasks.map(function(t){ return t.id===payload.id?Object.assign({},payload,{id:tid}):t; })
                                     : s.tasks.concat([Object.assign({},payload,{id:tid,completed:false})]);
-    this.setState({tasks:updated,modal:null,draft:null});
+    var place = (!payload.id && d._place) ? d._place : null;
+    this.setState({tasks:updated,modal:null,draft:null}, function(){
+      if(place) self.placeTask(tid, {di:place.di, wkKey:place.wkKey}, place.time);
+    });
     var SL=this.SL, am=this.apptMap(), prefs=s.prefs;
     var recurChanged = old && old.recurring!==payload.recurring;
     var hoursChanged = old && old.estimatedHours!==payload.estimatedHours;
@@ -536,13 +540,32 @@ export class PlannerLogic extends React.Component {
 
   /* ---------- draft plumbing ---------- */
   patchDraft(patch){ this.setState(function(s){ return {draft:Object.assign({},s.draft,patch)}; }); }
-  openTaskModal(t){
+  openTaskModal(t,place){
     var g=this.state.groups;
-    this.setState({modal:{kind:"task"},draft: t&&t.id ? Object.assign({},t) : {name:"",description:"",groupId:"",priority:3,estimatedHours:1,recurring:"none",status:"active",parentId:null}});
+    this.setState({modal:{kind:"task"},draft: t&&t.id ? Object.assign({},t) : {name:"",description:"",groupId:"",priority:3,estimatedHours:1,recurring:"none",status:"active",parentId:null,_place:place||null}});
   }
   openGroupModal(g){ this.setState({modal:{kind:"group"},draft: g&&g.id?Object.assign({},g):{name:"",color:"#6366F1"}}); }
   openApptModal(a){ this.setState({modal:{kind:"appt"},draft: a&&a.id?Object.assign({},a):{name:"",time:"09:00",duration:1,color:"#DC2626",notes:"",days:[1]}}); }
+  openApptModalAt(di,time){ this.setState({modal:{kind:"appt"},draft:{name:"",time:time,duration:1,color:"#DC2626",notes:"",days:[di]}}); }
+  openCellNew(c,time){ if(this.isResizing()) return; this.setState({modal:{kind:"cellnew"},draft:{di:c.di,wkKey:c.wkKey,time:time}}); }
   closeModal(){ this.setState({modal:null,draft:null}); }
+  moveAppt(id,fromDi,toDi,time){
+    var self=this;
+    this.setState(function(s){
+      var appt=s.appts.find(function(a){ return a.id===id; }); if(!appt) return {};
+      var next;
+      if((appt.days||[]).length>1){
+        // multi-day appointment: split off just the dragged day
+        var remaining=Object.assign({},appt,{days:appt.days.filter(function(x){ return x!==fromDi; })});
+        var moved=Object.assign({},appt,{id:self.uid(),days:[toDi],time:time});
+        next=s.appts.map(function(a){ return a.id===id?remaining:a; }).concat([moved]);
+      } else {
+        next=s.appts.map(function(a){ return a.id===id?Object.assign({},a,{days:[toDi],time:time}):a; });
+      }
+      return {appts:next};
+    });
+    this.toast("Appointment moved to "+this.DAYS[toDi]+" "+time);
+  }
 
   saveGroupDraft(){
     var d=this.state.draft; if(!d.name||!d.name.trim()) return;
@@ -683,8 +706,16 @@ export class PlannerLogic extends React.Component {
           style:{borderTop:isH?"1px solid rgba(255,255,255,.11)":"1px solid rgba(255,255,255,.045)",borderLeft:"1px solid rgba(255,255,255,.045)",minHeight:34,padding:1,position:"relative",
             background: (aE&&!entry) ? "rgba(220,38,38,.10)" : (s.dragId?"rgba(109,90,240,.09)":"transparent")},
           onDragOver:function(e){ e.preventDefault(); },
-          onDrop:function(e){ e.preventDefault(); var tid=e.dataTransfer.getData("text/plain")||s.dragId; if(tid) self.handleDrop(tid,c,time); },
-          onClick:function(){ if(s.dragId) self.handleDrop(s.dragId,c,time); },
+          onDrop:function(e){
+            e.preventDefault();
+            var data=e.dataTransfer.getData("text/plain")||"";
+            if(data.indexOf("appt|")===0){ var pp=data.split("|"); self.moveAppt(pp[1],parseInt(pp[2],10),c.di,time); return; }
+            var tid=data||s.dragId; if(tid) self.handleDrop(tid,c,time);
+          },
+          onClick:function(){
+            if(s.dragId){ self.handleDrop(s.dragId,c,time); }
+            else if(!entry && !aE){ self.openCellNew(c,time); }
+          },
           meal:meal||null, appt:null, task:null,
           todayStyle:c.isToday?{position:"absolute",left:-1,top:-1,bottom:-1,width:2,background:entry?"rgba(255,255,255,.85)":accent,zIndex:6,pointerEvents:"none"}:null,
           nowStyle:inSlot?{position:"absolute",left:0,right:0,top:nowPct+"%",height:0,zIndex:7,pointerEvents:"none",borderTop:"2px solid "+(entry?"rgba(255,255,255,.9)":"#FF3D6E"),boxShadow:"0 0 8px rgba(255,61,110,.8)"}:null
@@ -693,8 +724,9 @@ export class PlannerLogic extends React.Component {
           var ac=aE.appt.color||"#DC2626";
           cell.appt={
             label:"\u25CE  "+aE.appt.name,
-            style:Object.assign({position:"absolute",top:1,left:1,right:1,height:"calc("+(aE.span*100)+"% - 2px)",borderRadius:7,padding:"3px 7px",fontSize:10.5,fontWeight:700,zIndex:3,cursor:"pointer",overflow:"hidden"},self.solidChip(ac,false)),
-            onClick:function(e){ e.stopPropagation(); self.openApptModal(aE.appt); }
+            style:Object.assign({position:"absolute",top:1,left:1,right:1,height:"calc("+(aE.span*100)+"% - 2px)",borderRadius:7,padding:"3px 7px",fontSize:10.5,fontWeight:700,zIndex:3,cursor:"grab",overflow:"hidden"},self.solidChip(ac,false)),
+            onClick:function(e){ e.stopPropagation(); self.openApptModal(aE.appt); },
+            onDragStart:function(e){ e.dataTransfer.setData("text/plain","appt|"+aE.appt.id+"|"+c.di); }
           };
         }
         if(task&&entry.isStart){
@@ -999,10 +1031,20 @@ export class PlannerLogic extends React.Component {
           err:d.err||null,
           errStyle:{borderRadius:10,padding:"9px 12px",fontSize:12,background:"rgba(220,38,38,.16)",border:"1px solid rgba(220,38,38,.45)",color:"#FFB4B4"},
           help:"Your server address, then the email + password of your KONQR account. One sign-in per device.",
+          passType:d.showPass?"text":"password",
+          passToggleLabel:d.showPass?"Hide":"Show",
+          onTogglePass:function(){ self.patchDraft({showPass:!d.showPass}); },
           onUrl:function(e){ self.patchDraft({url:e.target.value}); },
           onEmail:function(e){ self.patchDraft({email:e.target.value}); },
           onPass:function(e){ self.patchDraft({pass:e.target.value}); },
           onSave:function(){ if(!d.busy) self.doLogin(); }
+        };
+      } else if(kind==="cellnew"){
+        modal={
+          title:"Add on "+this.DAYS[d.di]+" at "+d.time, isCellNew:true,
+          intro:"What would you like to create here?",
+          onTask:function(){ self.openTaskModal(null,{di:d.di,wkKey:d.wkKey,time:d.time}); },
+          onAppt:function(){ self.openApptModalAt(d.di,d.time); }
         };
       }
     }
@@ -1081,7 +1123,9 @@ export class PlannerLogic extends React.Component {
         else self.edgeGuard.side=null;
       },
       mission:s.mission, mv:mv, gv:gv, tv:tv, pv:pv, av:av, prv:prv,
-      modal:modal, onCloseModal:function(){ self.closeModal(); }, stopProp:function(e){ e.stopPropagation(); }
+      modal:modal, onCloseModal:function(){ self.closeModal(); },
+      onOverlayDown:function(e){ if(e.target===e.currentTarget) self.closeModal(); },
+      stopProp:function(e){ e.stopPropagation(); }
     };
   }
 }

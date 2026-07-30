@@ -269,7 +269,7 @@ export default class App extends PlannerLogic {
                               ) : null}
                               {(cell.appt) ? (
                                 <React.Fragment>
-                                <div onClick={cell.appt.onClick} style={cell.appt.style}>
+                                <div draggable={true} onDragStart={cell.appt.onDragStart} onClick={cell.appt.onClick} style={cell.appt.style}>
                                   {cell.appt.label}
                                 </div>
                                 </React.Fragment>
@@ -751,7 +751,7 @@ export default class App extends PlannerLogic {
         ) : null}
         {(v.modal) ? (
           <React.Fragment>
-          <div onClick={v.onCloseModal} style={css("position:fixed;inset:0;background:rgba(4,6,10,.62);backdrop-filter:blur(6px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:18px")}>
+          <div onMouseDown={v.onOverlayDown} style={css("position:fixed;inset:0;background:rgba(4,6,10,.62);backdrop-filter:blur(6px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:18px")}>
             <div onClick={v.stopProp} style={css("width:100%;max-width:580px;max-height:90vh;overflow-y:auto;border-radius:20px;padding:24px;background:linear-gradient(180deg,rgba(30,34,42,.92),rgba(16,19,25,.94));border:1px solid rgba(255,255,255,.14);box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 40px 90px -30px rgba(0,0,0,1)")}>
               <div style={css("display:flex;justify-content:space-between;align-items:center;margin-bottom:18px")}>
                 <h3 style={css("font-size:17px;font-weight:700;color:#F4F6F8")}>
@@ -1016,7 +1016,12 @@ export default class App extends PlannerLogic {
                     <label style={css("font-size:9.5px;font-weight:700;letter-spacing:.14em;color:rgba(231,233,236,.42);display:block;margin-bottom:5px")}>
                       PASSWORD
                     </label>
-                    <input type="password" value={v.modal.d.pass ?? ""} onChange={v.modal.onPass} style={css("width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.06);font-size:14px")} />
+                    <div style={css("display:flex;gap:7px")}>
+                      <input type={v.modal.passType} value={v.modal.d.pass ?? ""} onChange={v.modal.onPass} style={css("flex:1;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.06);font-size:14px")} />
+                      <button onClick={v.modal.onTogglePass} style={css("padding:0 14px;border-radius:10px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.06);color:#E7E9EC;font-size:12px;cursor:pointer")}>
+                        {v.modal.passToggleLabel}
+                      </button>
+                    </div>
                   </div>
                   {(v.modal.err) ? (
                     <React.Fragment>
@@ -1031,6 +1036,28 @@ export default class App extends PlannerLogic {
                     </button>
                     <button onClick={v.modal.onSave} style={v.primaryBtnStyle}>
                       {v.modal.saveLabel}
+                    </button>
+                  </div>
+                </div>
+                </React.Fragment>
+              ) : null}
+              {(v.modal.isCellNew) ? (
+                <React.Fragment>
+                <div style={css("display:flex;flex-direction:column;gap:14px")}>
+                  <p style={css("font-size:13px;color:rgba(231,233,236,.6)")}>
+                    {v.modal.intro}
+                  </p>
+                  <div style={css("display:grid;grid-template-columns:1fr 1fr;gap:11px")}>
+                    <button onClick={v.modal.onTask} style={css("padding:18px 14px;border-radius:13px;border:1px solid rgba(255,255,255,.14);background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.03));color:#F2F4F7;font-size:14px;font-weight:700;cursor:pointer")}>
+                      + Task
+                    </button>
+                    <button onClick={v.modal.onAppt} style={css("padding:18px 14px;border-radius:13px;border:1px solid rgba(220,38,38,.45);background:linear-gradient(180deg,rgba(220,38,38,.28),rgba(220,38,38,.10));color:#FFE4E4;font-size:14px;font-weight:700;cursor:pointer")}>
+                      + Appointment
+                    </button>
+                  </div>
+                  <div style={css("display:flex;justify-content:flex-end")}>
+                    <button onClick={v.onCloseModal} style={css("padding:8px 14px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#E7E9EC;font-size:12.5px;cursor:pointer")}>
+                      Cancel
                     </button>
                   </div>
                 </div>

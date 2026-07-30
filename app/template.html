@@ -255,7 +255,7 @@ option{background:#14181F;color:#E7E9EC}
                           </div>
                         </sc-if>
                         <sc-if value="{{ cell.appt }}" hint-placeholder-val="{{ false }}">
-                          <div sc-camel-on-click="{{ cell.appt.onClick }}" style="{{ cell.appt.style }}">{{ cell.appt.label }}</div>
+                          <div draggable="true" sc-camel-on-drag-start="{{ cell.appt.onDragStart }}" sc-camel-on-click="{{ cell.appt.onClick }}" style="{{ cell.appt.style }}">{{ cell.appt.label }}</div>
                         </sc-if>
                         <sc-if value="{{ cell.task }}" hint-placeholder-val="{{ false }}">
                           <div draggable="true" sc-camel-on-drag-start="{{ cell.task.onDragStart }}" sc-camel-on-click="{{ cell.task.onClick }}" sc-camel-on-mouse-enter="{{ cell.task.onEnter }}" sc-camel-on-mouse-leave="{{ cell.task.onLeave }}" style="{{ cell.task.style }}">
@@ -541,7 +541,7 @@ option{background:#14181F;color:#E7E9EC}
   </sc-if>
 
   <sc-if value="{{ modal }}" hint-placeholder-val="{{ false }}">
-    <div sc-camel-on-click="{{ onCloseModal }}" style="position:fixed;inset:0;background:rgba(4,6,10,.62);backdrop-filter:blur(6px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:18px">
+    <div sc-camel-on-mouse-down="{{ onOverlayDown }}" style="position:fixed;inset:0;background:rgba(4,6,10,.62);backdrop-filter:blur(6px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:18px">
       <div sc-camel-on-click="{{ stopProp }}" style="width:100%;max-width:580px;max-height:90vh;overflow-y:auto;border-radius:20px;padding:24px;background:linear-gradient(180deg,rgba(30,34,42,.92),rgba(16,19,25,.94));border:1px solid rgba(255,255,255,.14);box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 40px 90px -30px rgba(0,0,0,1)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
           <h3 style="font-size:17px;font-weight:700;color:#F4F6F8">{{ modal.title }}</h3>
@@ -701,7 +701,10 @@ option{background:#14181F;color:#E7E9EC}
             </div>
             <div>
               <label style="font-size:9.5px;font-weight:700;letter-spacing:.14em;color:rgba(231,233,236,.42);display:block;margin-bottom:5px">PASSWORD</label>
-              <input type="password" value="{{ modal.d.pass }}" sc-camel-on-change="{{ modal.onPass }}" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.06);font-size:14px">
+              <div style="display:flex;gap:7px">
+                <input type="{{ modal.passType }}" value="{{ modal.d.pass }}" sc-camel-on-change="{{ modal.onPass }}" style="flex:1;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.06);font-size:14px">
+                <button sc-camel-on-click="{{ modal.onTogglePass }}" style="padding:0 14px;border-radius:10px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.06);color:#E7E9EC;font-size:12px;cursor:pointer">{{ modal.passToggleLabel }}</button>
+              </div>
             </div>
             <sc-if value="{{ modal.err }}" hint-placeholder-val="{{ false }}">
               <div style="{{ modal.errStyle }}">{{ modal.err }}</div>
@@ -709,6 +712,19 @@ option{background:#14181F;color:#E7E9EC}
             <div style="display:flex;gap:9px;justify-content:flex-end">
               <button sc-camel-on-click="{{ onCloseModal }}" style="padding:8px 14px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#E7E9EC;font-size:12.5px;cursor:pointer">Cancel</button>
               <button sc-camel-on-click="{{ modal.onSave }}" style="{{ primaryBtnStyle }}">{{ modal.saveLabel }}</button>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ modal.isCellNew }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <p style="font-size:13px;color:rgba(231,233,236,.6)">{{ modal.intro }}</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+              <button sc-camel-on-click="{{ modal.onTask }}" style="padding:18px 14px;border-radius:13px;border:1px solid rgba(255,255,255,.14);background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.03));color:#F2F4F7;font-size:14px;font-weight:700;cursor:pointer">+ Task</button>
+              <button sc-camel-on-click="{{ modal.onAppt }}" style="padding:18px 14px;border-radius:13px;border:1px solid rgba(220,38,38,.45);background:linear-gradient(180deg,rgba(220,38,38,.28),rgba(220,38,38,.10));color:#FFE4E4;font-size:14px;font-weight:700;cursor:pointer">+ Appointment</button>
+            </div>
+            <div style="display:flex;justify-content:flex-end">
+              <button sc-camel-on-click="{{ onCloseModal }}" style="padding:8px 14px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#E7E9EC;font-size:12.5px;cursor:pointer">Cancel</button>
             </div>
           </div>
         </sc-if>

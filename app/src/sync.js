@@ -31,7 +31,7 @@ Cloud.prototype.uid = function () {
   return r ? r.id : null;
 };
 Cloud.prototype.login = async function (url, email, pass) {
-  url = (url || "").trim().replace(/\/+$/, "");
+  url = (url || "").replace(/\s+/g, "").replace(/\/+$/, ""); // strip ALL whitespace — mobile keyboards auto-insert spaces after "."
   if (!/^https?:\/\//.test(url)) url = "https://" + url;
   try { localStorage.setItem(URL_KEY, url); } catch (e) {}
   this._init(url);
