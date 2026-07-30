@@ -14,6 +14,7 @@ const EVENT_MAP = {
   "sc-camel-on-blur": "onBlur",
   "sc-camel-on-key-down": "onKeyDown",
   "sc-camel-on-drag-start": "onDragStart",
+  "sc-camel-on-drag-end": "onDragEnd",
   "sc-camel-on-drag-over": "onDragOver",
   "sc-camel-on-drop": "onDrop",
   "sc-camel-on-mouse-enter": "onMouseEnter",

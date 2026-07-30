@@ -70,7 +70,7 @@ export class PlannerLogic extends React.Component {
   state = {
     view:"calendar", tasks:this.ST, groups:this.SG, goals:this.SGo, mission:this.SEED_M,
     cal:{}, appts:this.SA, prefs:this.SPr, wgoals:{}, loaded:false,
-    anchorMs:this.getMon(new Date()).getTime(), dragId:null, dragOrigin:null,
+    anchorMs:this.getMon(new Date()).getTime(), dragId:null, dragOrigin:null, dragHover:null,
     plFilter:"all", editWG:-1, wgDraft:"", nowTick:Date.now(), mobDay:0, sideOpen:false,
     isMob:false, isPortrait:false, navHover:null, drawerOpen:false, hoverTask:null,
     toast:null, undoStack:[], modal:null, draft:null,
@@ -327,7 +327,7 @@ export class PlannerLogic extends React.Component {
         var r=Object.assign({},s.cal); r[origin]=cleaned; return {cal:r};
       });
     }
-    this.setState({dragId:null,dragOrigin:null});
+    this.setState({dragId:null,dragOrigin:null,dragHover:null});
   }
   removeFromCal(tid){ this.setWCal(function(prev){ var n={}; Object.keys(prev).forEach(function(k){ if(!prev[k]||prev[k].taskId!==tid) n[k]=prev[k]; }); return n; }); }
   toggleDone(tid){ this.setState(function(s){ return {tasks:s.tasks.map(function(t){ return t.id===tid?Object.assign({},t,{completed:!t.completed}):t; })}; }); }
@@ -706,6 +706,7 @@ export class PlannerLogic extends React.Component {
         name:t.name, meta:(t.estimatedHours||1)+"h \u00B7 P"+t.priority+(t.parentId?" \u00B7 sub":"")+(gMap[t.groupId]?" \u00B7 "+gMap[t.groupId].name:""),
         style:Object.assign({padding:"7px 10px",marginBottom:5,borderRadius:8,cursor:"grab"},chip),
         onDragStart:function(e){ e.dataTransfer.setData("text/plain",t.id); self.setState({dragId:t.id,dragOrigin:wk}); },
+        onDragEnd:function(){ self.setState({dragId:null,dragOrigin:null,dragHover:null}); },
         onClick:function(){ if(!s.dragId) self.openTaskModal(t); else self.setState({dragId:null}); }
       };
     });
@@ -741,7 +742,11 @@ export class PlannerLogic extends React.Component {
         var cell={
           style:{borderTop:isH?"1px solid rgba(255,255,255,.11)":"1px solid rgba(255,255,255,.045)",borderLeft:"1px solid rgba(255,255,255,.045)",minHeight:34,padding:1,position:"relative",
             background: (aE&&!entry) ? "rgba(220,38,38,.10)" : (s.dragId?"rgba(109,90,240,.09)":"transparent")},
-          onDragOver:function(e){ e.preventDefault(); },
+          onDragOver:function(e){
+            e.preventDefault();
+            var did=self.state.dragId; /* live state — closure can be stale right after dragstart */
+            if(did){ var hk=c.di+"|"+time+"|"+c.wkKey; if(self.state.dragHover!==hk) self.setState({dragHover:hk}); }
+          },
           onDrop:function(e){
             e.preventDefault();
             var data=e.dataTransfer.getData("text/plain")||"";
@@ -752,10 +757,33 @@ export class PlannerLogic extends React.Component {
             if(s.dragId){ self.handleDrop(s.dragId,c,time); }
             else if(!entry && !aE){ self.openCellNew(c,time); }
           },
-          meal:meal||null, appt:null, task:null,
+          meal:meal||null, appt:null, task:null, ghost:null,
           todayStyle:c.isToday?{position:"absolute",left:-1,top:-1,bottom:-1,width:2,background:entry?"rgba(255,255,255,.85)":accent,zIndex:6,pointerEvents:"none"}:null,
           nowStyle:inSlot?{position:"absolute",left:0,right:0,top:nowPct+"%",height:0,zIndex:7,pointerEvents:"none",borderTop:"2px solid "+(entry?"rgba(255,255,255,.9)":"#FF3D6E"),boxShadow:"0 0 8px rgba(255,61,110,.8)"}:null
         };
+        if(s.dragId && s.dragHover===(c.di+"|"+time+"|"+c.wkKey)){
+          var dTask=s.tasks.find(function(t){ return t.id===s.dragId; });
+          if(dTask){
+            var gspan=Math.max(1,Math.ceil((dTask.estimatedHours||1)*2));
+            var gti=SL.indexOf(time), conflicts=0, blocker=null, colC=s.cal[c.wkKey]||{};
+            for(var gi=0; gi<gspan; gi++){
+              if(gti+gi>=SL.length){ conflicts+=gspan-gi; if(!blocker) blocker="end of day"; break; }
+              var gck=c.di+"-"+SL[gti+gi];
+              if(am[gck]){ conflicts++; if(!blocker) blocker=am[gck].appt.name; continue; }
+              var ge=colC[gck];
+              if(ge&&ge.taskId!==s.dragId){ conflicts++; if(!blocker){ var bt=s.tasks.find(function(x){ return x.id===ge.taskId; }); blocker=bt?bt.name:"another task"; } }
+            }
+            var gfits=conflicts===0;
+            cell.ghost={
+              label: gfits ? dTask.name+" \u00B7 "+(dTask.estimatedHours||1)+"h \u2713" : "+"+(conflicts*0.5)+"h over \""+blocker+"\"",
+              style:{position:"absolute",top:1,left:1,right:1,height:"calc("+(gspan*100)+"% - 2px)",borderRadius:7,zIndex:8,pointerEvents:"none",
+                background:gfits?"rgba(34,197,94,.22)":"rgba(239,68,68,.28)",
+                border:"2px dashed "+(gfits?"#22C55E":"#F87171"),
+                display:"flex",alignItems:"flex-start",padding:"3px 6px"},
+              labelStyle:{fontSize:9.5,fontWeight:700,color:gfits?"#B7F0CB":"#FFC9C9",background:"rgba(10,12,18,.7)",padding:"2px 6px",borderRadius:6,whiteSpace:"nowrap"}
+            };
+          }
+        }
         if(aE&&aE.isStart&&!entry){
           var ac=aE.appt.color||"#DC2626";
           cell.appt={
@@ -782,6 +810,7 @@ export class PlannerLogic extends React.Component {
             style:Object.assign({position:"absolute",top:1,left:1,right:1,height:"calc("+(entry.span*100)+"% - 2px)",borderRadius:7,padding:"3px 5px",fontSize:10.5,cursor:"grab",zIndex:2,lineHeight:1.28,display:"flex",flexDirection:"column",overflow:"hidden",textDecoration:task.completed?"line-through":"none"},chip),
             doneStyle:{width:20,height:20,borderRadius:6,border:"1px solid rgba(255,255,255,.6)",background:task.completed?"linear-gradient(180deg,#FFFFFF,rgba(255,255,255,.78))":"linear-gradient(180deg,rgba(255,255,255,.3),rgba(255,255,255,.10))",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0,flexShrink:0,boxShadow:"inset 0 1px 0 rgba(255,255,255,.5)"},
             onDragStart:function(e){ e.dataTransfer.setData("text/plain",task.id); self.setState({dragId:task.id,dragOrigin:c.wkKey}); },
+            onDragEnd:function(){ self.setState({dragId:null,dragOrigin:null,dragHover:null}); },
             onClick:function(e){ e.stopPropagation(); if(self.isResizing()) return; self.openTaskModal(task); },
             onDup:function(e){ e.stopPropagation(); self.duplicateTask(task.id); },
             onDone:function(e){ e.stopPropagation(); self.toggleDone(task.id); },

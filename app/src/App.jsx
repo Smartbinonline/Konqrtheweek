@@ -177,7 +177,7 @@ export default class App extends PlannerLogic {
                         ) : null}
                         {(v.unschedList).map(function(t, i3) { return (
                           <React.Fragment key={i3}>
-                          <div draggable={true} onDragStart={t.onDragStart} onClick={t.onClick} style={t.style}>
+                          <div draggable={true} onDragStart={t.onDragStart} onDragEnd={t.onDragEnd} onClick={t.onClick} style={t.style}>
                             <div style={css("font-weight:600;font-size:11.5px")}>
                               {t.name}
                             </div>
@@ -258,6 +258,15 @@ export default class App extends PlannerLogic {
                                 <div style={cell.nowStyle} />
                                 </React.Fragment>
                               ) : null}
+                              {(cell.ghost) ? (
+                                <React.Fragment>
+                                <div style={cell.ghost.style}>
+                                  <span style={cell.ghost.labelStyle}>
+                                    {cell.ghost.label}
+                                  </span>
+                                </div>
+                                </React.Fragment>
+                              ) : null}
                               {(cell.meal) ? (
                                 <React.Fragment>
                                 <div style={css("position:absolute;top:0;left:0;right:0;height:0;border-top:1px dashed rgba(224,176,80,.5);z-index:0;pointer-events:none")}>
@@ -276,7 +285,7 @@ export default class App extends PlannerLogic {
                               ) : null}
                               {(cell.task) ? (
                                 <React.Fragment>
-                                <div draggable={true} onDragStart={cell.task.onDragStart} onClick={cell.task.onClick} onMouseEnter={cell.task.onEnter} onMouseLeave={cell.task.onLeave} style={cell.task.style}>
+                                <div draggable={true} onDragStart={cell.task.onDragStart} onDragEnd={cell.task.onDragEnd} onClick={cell.task.onClick} onMouseEnter={cell.task.onEnter} onMouseLeave={cell.task.onLeave} style={cell.task.style}>
                                   <div>
                                     <span style={cell.task.nameStyle}>
                                       {cell.task.name}
