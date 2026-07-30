@@ -258,6 +258,21 @@ export default class App extends PlannerLogic {
                                 <div style={cell.nowStyle} />
                                 </React.Fragment>
                               ) : null}
+                              {(cell.pend) ? (
+                                <React.Fragment>
+                                <div draggable={true} onDragStart={cell.pend.onDragStart} onDragEnd={cell.pend.onDragEnd} onClick={cell.pend.onClick} style={cell.pend.style}>
+                                  <div style={cell.pend.nameStyle}>
+                                    {cell.pend.name}
+                                  </div>
+                                  <div style={cell.pend.subStyle}>
+                                    {cell.pend.sub}
+                                  </div>
+                                  <button onClick={cell.pend.onCancel} title="Cancel" style={cell.pend.cancelStyle}>
+                                    ✕
+                                  </button>
+                                </div>
+                                </React.Fragment>
+                              ) : null}
                               {(cell.ghost) ? (
                                 <React.Fragment>
                                 <div style={cell.ghost.style}>

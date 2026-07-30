@@ -249,6 +249,13 @@ option{background:#14181F;color:#E7E9EC}
                         <sc-if value="{{ cell.nowStyle }}" hint-placeholder-val="{{ false }}">
                           <div style="{{ cell.nowStyle }}"></div>
                         </sc-if>
+                        <sc-if value="{{ cell.pend }}" hint-placeholder-val="{{ false }}">
+                          <div draggable="true" sc-camel-on-drag-start="{{ cell.pend.onDragStart }}" sc-camel-on-drag-end="{{ cell.pend.onDragEnd }}" sc-camel-on-click="{{ cell.pend.onClick }}" style="{{ cell.pend.style }}">
+                            <div style="{{ cell.pend.nameStyle }}">{{ cell.pend.name }}</div>
+                            <div style="{{ cell.pend.subStyle }}">{{ cell.pend.sub }}</div>
+                            <button sc-camel-on-click="{{ cell.pend.onCancel }}" title="Cancel" style="{{ cell.pend.cancelStyle }}">✕</button>
+                          </div>
+                        </sc-if>
                         <sc-if value="{{ cell.ghost }}" hint-placeholder-val="{{ false }}">
                           <div style="{{ cell.ghost.style }}">
                             <span style="{{ cell.ghost.labelStyle }}">{{ cell.ghost.label }}</span>

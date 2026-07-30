@@ -8,6 +8,7 @@ export class PlannerLogic extends React.Component {
   RO = [{value:"none",label:"No repeat"},{value:"daily",label:"Daily"},{value:"weekdays",label:"Weekdays"},{value:"weekly",label:"Weekly"},{value:"monthly",label:"Monthly"}];
   MEAL_SLOTS = { "07:30":"Breakfast", "12:30":"Lunch", "18:00":"Dinner" };
   MAX_HRS = 4;
+  PENDING_MS = 6000;
   SL = (function(){ var s=[]; for(var h=6;h<=20;h++) for(var m=0;m<60;m+=30) s.push((h<10?"0"+h:""+h)+":"+(m===0?"00":"30")); return s; })();
   TZS = ["Pacific/Auckland","Pacific/Chatham","Australia/Sydney","Australia/Melbourne","Australia/Brisbane","Australia/Perth","Asia/Hong_Kong","Asia/Singapore","Asia/Tokyo","Asia/Bangkok","Asia/Kolkata","Europe/London","Europe/Paris","Europe/Berlin","America/New_York","America/Chicago","America/Denver","America/Los_Angeles","Pacific/Honolulu"];
   STATUS_OPTIONS = [
@@ -70,7 +71,7 @@ export class PlannerLogic extends React.Component {
   state = {
     view:"calendar", tasks:this.ST, groups:this.SG, goals:this.SGo, mission:this.SEED_M,
     cal:{}, appts:this.SA, prefs:this.SPr, wgoals:{}, loaded:false,
-    anchorMs:this.getMon(new Date()).getTime(), dragId:null, dragOrigin:null, dragHover:null,
+    anchorMs:this.getMon(new Date()).getTime(), dragId:null, dragOrigin:null, dragHover:null, pending:null, pendingTick:0,
     plFilter:"all", editWG:-1, wgDraft:"", nowTick:Date.now(), mobDay:0, sideOpen:false,
     isMob:false, isPortrait:false, navHover:null, drawerOpen:false, hoverTask:null,
     toast:null, undoStack:[], modal:null, draft:null,
@@ -205,7 +206,7 @@ export class PlannerLogic extends React.Component {
     if(cloud.isAuthed()){ setTimeout(function(){ self.cloudPull(); self.startRealtime(); },300); }
     else { setTimeout(function(){ self.toast("Tip: click \u25CB Sign in (top right) to sync across your devices"); },1200); }
   }
-  componentWillUnmount(){ window.removeEventListener("resize",this._rz); window.removeEventListener("beforeunload",this._bu); document.removeEventListener("visibilitychange",this._vis); clearInterval(this._iv); clearTimeout(this._tt); clearTimeout(this._st); }
+  componentWillUnmount(){ window.removeEventListener("resize",this._rz); window.removeEventListener("beforeunload",this._bu); document.removeEventListener("visibilitychange",this._vis); clearInterval(this._iv); clearTimeout(this._tt); clearTimeout(this._st); clearTimeout(this._pt); if(this._ptick) clearInterval(this._ptick); }
   componentDidUpdate(pp, ps){
     if(!this.state.loaded) return;
     var s=this.state;
@@ -216,6 +217,9 @@ export class PlannerLogic extends React.Component {
     if(dataChanged){
       if(this._skipNextPush){ this._skipNextPush=false; }
       else this.scheduleCloudSave();
+    }
+    if(s.pending && ps && (ps.cal!==s.cal || ps.tasks!==s.tasks || ps.modal!==s.modal || ps.dragHover!==s.dragHover)){
+      this.pendingRecheck();
     }
   }
 
@@ -285,7 +289,7 @@ export class PlannerLogic extends React.Component {
     });
     return {free:free, blocker:blocker};
   }
-  placeTask(tid,col,time){
+  placeTask(tid,col,time,originWk){
     var self=this, SL=this.SL;
     var task=this.state.tasks.find(function(t){ return t.id===tid; }); if(!task) return false;
     var span=Math.max(1,Math.ceil((task.estimatedHours||1)*2));
@@ -294,11 +298,14 @@ export class PlannerLogic extends React.Component {
     if(rec==="daily") days=[0,1,2,3,4,5,6]; else if(rec==="weekdays") days=[0,1,2,3,4];
     var chk=this.freeDaysFor(tid,days,ti,span,col.wkKey);
     if(chk.free.length===0){
-      this.toast(days.length>1
-        ? "No free days at "+time+" — every day clashes with \""+(chk.blocker||"something")+"\""
-        : "Overlaps \""+(chk.blocker||"busy slot")+"\" — move or shorten it first");
-      return false;
+      if(days.length>1){
+        this.toast("No free days at "+time+" — every day clashes with \""+(chk.blocker||"something")+"\"");
+        return false;
+      }
+      this.startPending(tid,col,time,originWk||null,chk.blocker);
+      return "pending";
     }
+    if(this.state.pending && this.state.pending.taskId===tid){ this._pendingOrigin=null; this.clearPending(); }
     this.pushUndo();
     var place=chk.free;
     this.setState(function(s){
@@ -318,9 +325,9 @@ export class PlannerLogic extends React.Component {
     return true;
   }
   handleDrop(tid,col,time){
-    var placed=this.placeTask(tid,col,time);
     var origin=this.state.dragOrigin;
-    if(placed && origin && origin!==col.wkKey){
+    var placed=this.placeTask(tid,col,time,origin);
+    if(placed===true && origin && origin!==col.wkKey){
       this.setState(function(s){
         var src=s.cal[origin]||{}, cleaned={};
         Object.keys(src).forEach(function(k){ if(!src[k]||src[k].taskId!==tid) cleaned[k]=src[k]; });
@@ -328,6 +335,87 @@ export class PlannerLogic extends React.Component {
       });
     }
     this.setState({dragId:null,dragOrigin:null,dragHover:null});
+  }
+  /* ---------- provisional ("make it fit") placement ---------- */
+  startPending(tid,col,time,originWk,blocker){
+    var self=this;
+    if(!(this.state.pending && this.state.pending.taskId===tid && this._pendingOrigin)){
+      var originCells=null;
+      if(originWk){
+        var src=this.state.cal[originWk]||{}, mine={};
+        Object.keys(src).forEach(function(k){ if(src[k]&&src[k].taskId===tid) mine[k]=src[k]; });
+        if(Object.keys(mine).length){
+          originCells={wk:originWk,cells:mine};
+          this.setState(function(st){
+            var s2=st.cal[originWk]||{}, n={};
+            Object.keys(s2).forEach(function(k){ if(!s2[k]||s2[k].taskId!==tid) n[k]=s2[k]; });
+            var r=Object.assign({},st.cal); r[originWk]=n; return {cal:r};
+          });
+        }
+      }
+      this._pendingOrigin=originCells;
+    }
+    this.setState({pending:{taskId:tid,di:col.di,wkKey:col.wkKey,time:time,expiresAt:Date.now()+this.PENDING_MS}});
+    clearTimeout(this._pt);
+    this._pt=setTimeout(function(){ self.expirePending(); },this.PENDING_MS+80);
+    if(!this._ptick){ this._ptick=setInterval(function(){ if(self.state.pending) self.setState({pendingTick:Date.now()}); },1000); }
+    this.toast("Doesn’t fit — make room for it"+(blocker?" (\""+blocker+"\" is in the way)":""));
+  }
+  clearPending(){
+    clearTimeout(this._pt);
+    if(this._ptick){ clearInterval(this._ptick); this._ptick=null; }
+    if(this.state.pending) this.setState({pending:null});
+  }
+  resetPendingTimer(){
+    var self=this, p=this.state.pending; if(!p) return;
+    clearTimeout(this._pt);
+    this._pt=setTimeout(function(){ self.expirePending(); },this.PENDING_MS+80);
+    this.setState({pending:Object.assign({},p,{expiresAt:Date.now()+this.PENDING_MS})});
+  }
+  pendingRecheck(){
+    var p=this.state.pending; if(!p) return;
+    var task=this.state.tasks.find(function(t){ return t.id===p.taskId; });
+    if(!task||task.completed){ this._pendingOrigin=null; this.clearPending(); return; }
+    var SL=this.SL, ti=SL.indexOf(p.time), span=Math.max(1,Math.ceil((task.estimatedHours||1)*2));
+    var chk=this.freeDaysFor(p.taskId,[p.di],ti,span,p.wkKey);
+    if(chk.free.length) this.commitPending();
+    else this.resetPendingTimer();
+  }
+  commitPending(){
+    var self=this, p=this.state.pending; if(!p) return;
+    var task=this.state.tasks.find(function(t){ return t.id===p.taskId; });
+    if(!task){ this._pendingOrigin=null; this.clearPending(); return; }
+    var SL=this.SL, ti=SL.indexOf(p.time), span=Math.max(1,Math.ceil((task.estimatedHours||1)*2));
+    this.pushUndo();
+    this.setState(function(st){
+      var src=st.cal[p.wkKey]||{}, n={};
+      Object.keys(src).forEach(function(k){ if(!src[k]||src[k].taskId!==p.taskId) n[k]=src[k]; });
+      for(var i=0;i<span&&ti+i<SL.length;i++) n[p.di+"-"+SL[ti+i]]={taskId:p.taskId,isStart:i===0,span:span};
+      var r=Object.assign({},st.cal); r[p.wkKey]=n; return {cal:r};
+    });
+    this._pendingOrigin=null;
+    this.clearPending();
+    this.toast("It fits — locked in ✓");
+  }
+  expirePending(){
+    var p=this.state.pending; if(!p) return;
+    var o=this._pendingOrigin;
+    this._pendingOrigin=null;
+    this.clearPending();
+    if(o){
+      var cal=this.state.cal[o.wk]||{};
+      var free=Object.keys(o.cells).every(function(k){ return !cal[k]; });
+      if(free){
+        this.setState(function(st){
+          var n=Object.assign({},st.cal[o.wk]||{});
+          Object.keys(o.cells).forEach(function(k){ n[k]=o.cells[k]; });
+          var r=Object.assign({},st.cal); r[o.wk]=n; return {cal:r};
+        });
+        this.toast("Didn’t fit — returned to its old spot");
+        return;
+      }
+    }
+    this.toast("Didn’t fit — back in the Parking Lot");
   }
   removeFromCal(tid){ this.setWCal(function(prev){ var n={}; Object.keys(prev).forEach(function(k){ if(!prev[k]||prev[k].taskId!==tid) n[k]=prev[k]; }); return n; }); }
   toggleDone(tid){ this.setState(function(s){ return {tasks:s.tasks.map(function(t){ return t.id===tid?Object.assign({},t,{completed:!t.completed}):t; })}; }); }
@@ -757,10 +845,30 @@ export class PlannerLogic extends React.Component {
             if(s.dragId){ self.handleDrop(s.dragId,c,time); }
             else if(!entry && !aE){ self.openCellNew(c,time); }
           },
-          meal:meal||null, appt:null, task:null, ghost:null,
+          meal:meal||null, appt:null, task:null, ghost:null, pend:null,
           todayStyle:c.isToday?{position:"absolute",left:-1,top:-1,bottom:-1,width:2,background:entry?"rgba(255,255,255,.85)":accent,zIndex:6,pointerEvents:"none"}:null,
           nowStyle:inSlot?{position:"absolute",left:0,right:0,top:nowPct+"%",height:0,zIndex:7,pointerEvents:"none",borderTop:"2px solid "+(entry?"rgba(255,255,255,.9)":"#FF3D6E"),boxShadow:"0 0 8px rgba(255,61,110,.8)"}:null
         };
+        if(s.pending && s.pending.wkKey===c.wkKey && s.pending.di===c.di && s.pending.time===time){
+          var pTask=s.tasks.find(function(t){ return t.id===s.pending.taskId; });
+          if(pTask){
+            var pspan=Math.max(1,Math.ceil((pTask.estimatedHours||1)*2));
+            var psecs=Math.max(0,Math.ceil((s.pending.expiresAt-Date.now())/1000));
+            cell.pend={
+              name:pTask.name,
+              sub:(pTask.estimatedHours||1)+"h · returns in "+psecs+"s",
+              style:{position:"absolute",top:1,left:"38%",right:1,height:"calc("+(pspan*100)+"% - 2px)",borderRadius:7,zIndex:9,cursor:"grab",padding:"3px 6px",overflow:"hidden",
+                background:"rgba(245,158,11,.34)",border:"2px dashed #F59E0B",display:"flex",flexDirection:"column",gap:2},
+              nameStyle:{fontSize:10,fontWeight:700,color:"#FFF3DC",textShadow:"0 1px 2px rgba(0,0,0,.9)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:18},
+              subStyle:{fontSize:8.5,fontWeight:600,color:"#FFD98A",textShadow:"0 1px 2px rgba(0,0,0,.9)"},
+              cancelStyle:{position:"absolute",top:2,right:2,width:16,height:16,borderRadius:5,border:"1px solid rgba(255,255,255,.4)",background:"rgba(10,12,18,.6)",color:"#FFD98A",fontSize:9,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0},
+              onDragStart:function(e){ e.dataTransfer.setData("text/plain",pTask.id); self.setState({dragId:pTask.id,dragOrigin:c.wkKey}); },
+              onDragEnd:function(){ self.setState({dragId:null,dragOrigin:null,dragHover:null}); },
+              onCancel:function(e){ e.stopPropagation(); self.expirePending(); },
+              onClick:function(e){ e.stopPropagation(); self.openTaskModal(pTask); }
+            };
+          }
+        }
         if(s.dragId && s.dragHover===(c.di+"|"+time+"|"+c.wkKey)){
           var dTask=s.tasks.find(function(t){ return t.id===s.dragId; });
           if(dTask){
