@@ -266,41 +266,67 @@ export class PlannerLogic extends React.Component {
   }
 
   /* ---------- actions ---------- */
+  /* which of the requested days are fully free for [ti, ti+span)? (ignoring the task's own cells) */
+  freeDaysFor(tid,days,ti,span,wkKey){
+    var s=this.state, am=this.apptMap(), SL=this.SL, cal=s.cal[wkKey]||{};
+    var blocker=null;
+    var free=days.filter(function(di){
+      for(var i=0;i<span&&ti+i<SL.length;i++){
+        var ck=di+"-"+SL[ti+i];
+        if(am[ck]){ blocker=am[ck].appt.name; return false; }
+        var e=cal[ck];
+        if(e&&e.taskId!==tid){
+          var t=s.tasks.find(function(x){ return x.id===e.taskId; });
+          blocker=t?t.name:"another task";
+          return false;
+        }
+      }
+      return true;
+    });
+    return {free:free, blocker:blocker};
+  }
   placeTask(tid,col,time){
-    this.pushUndo();
-    var self=this, am=this.apptMap(), SL=this.SL;
-    var task=this.state.tasks.find(function(t){ return t.id===tid; }); if(!task) return;
+    var self=this, SL=this.SL;
+    var task=this.state.tasks.find(function(t){ return t.id===tid; }); if(!task) return false;
     var span=Math.max(1,Math.ceil((task.estimatedHours||1)*2));
-    var ti=SL.indexOf(time); if(ti<0) return;
-    if(am[col.di+"-"+SL[ti]]){ this.toast("Blocked by appointment"); return; }
+    var ti=SL.indexOf(time); if(ti<0) return false;
     var days=[col.di], rec=task.recurring||"none";
     if(rec==="daily") days=[0,1,2,3,4,5,6]; else if(rec==="weekdays") days=[0,1,2,3,4];
-    var overlap=false;
+    var chk=this.freeDaysFor(tid,days,ti,span,col.wkKey);
+    if(chk.free.length===0){
+      this.toast(days.length>1
+        ? "No free days at "+time+" — every day clashes with \""+(chk.blocker||"something")+"\""
+        : "Overlaps \""+(chk.blocker||"busy slot")+"\" — move or shorten it first");
+      return false;
+    }
+    this.pushUndo();
+    var place=chk.free;
     this.setState(function(s){
       var src=s.cal[col.wkKey]||{}, n={};
       Object.keys(src).forEach(function(k){ if(!src[k]||src[k].taskId!==tid) n[k]=src[k]; });
-      days.forEach(function(di){
+      place.forEach(function(di){
         for(var i=0;i<span&&ti+i<SL.length;i++){
-          var ck=di+"-"+SL[ti+i];
-          if(am[ck]||(n[ck]&&n[ck].taskId!==tid)) overlap=true;
-          n[ck]={taskId:tid,isStart:i===0,span:span,recurring:days.length>1};
+          n[di+"-"+SL[ti+i]]={taskId:tid,isStart:i===0,span:span,recurring:place.length>1};
         }
       });
       var r=Object.assign({},s.cal); r[col.wkKey]=n; return {cal:r};
     });
-    if(days.length>1) this.toast("Placed on "+days.length+" days at "+time+(overlap?" (some overlaps)":""));
-    else if(overlap) this.toast("Placed with overlap - consider moving");
+    if(days.length>1){
+      var skipped=days.length-place.length;
+      this.toast("Placed on "+place.length+" days at "+time+(skipped>0?" ("+skipped+" skipped — occupied)":""));
+    }
+    return true;
   }
   handleDrop(tid,col,time){
+    var placed=this.placeTask(tid,col,time);
     var origin=this.state.dragOrigin;
-    if(origin && origin!==col.wkKey){
+    if(placed && origin && origin!==col.wkKey){
       this.setState(function(s){
         var src=s.cal[origin]||{}, cleaned={};
         Object.keys(src).forEach(function(k){ if(!src[k]||src[k].taskId!==tid) cleaned[k]=src[k]; });
         var r=Object.assign({},s.cal); r[origin]=cleaned; return {cal:r};
       });
     }
-    this.placeTask(tid,col,time);
     this.setState({dragId:null,dragOrigin:null});
   }
   removeFromCal(tid){ this.setWCal(function(prev){ var n={}; Object.keys(prev).forEach(function(k){ if(!prev[k]||prev[k].taskId!==tid) n[k]=prev[k]; }); return n; }); }
@@ -763,9 +789,18 @@ export class PlannerLogic extends React.Component {
               e.stopPropagation(); e.preventDefault();
               self.resizeGuard.active=true;
               var startY=e.clientY, origSpan=entry.span, taskId=task.id, dayI=c.di, wkC=c.wkKey, timeStr=time, recFlag=entry.recurring;
+              var amR=self.apptMap(), tiR=SL.indexOf(timeStr);
+              /* growing stops at the next task/appointment (or end of day) */
+              var maxSpan=16;
+              for(var mi=1;mi<16;mi++){
+                if(tiR+mi>=SL.length){ maxSpan=mi; break; }
+                var ckR=dayI+"-"+SL[tiR+mi];
+                var eR=(self.state.cal[wkC]||{})[ckR];
+                if(amR[ckR]||(eR&&eR.taskId!==taskId)){ maxSpan=mi; break; }
+              }
               var onMove=function(ev){
                 var diff=Math.round((ev.clientY-startY)/34);
-                var newSpan=Math.max(1,Math.min(origSpan+diff,16));
+                var newSpan=Math.max(1,Math.min(origSpan+diff,maxSpan));
                 var newHrs=Math.round(newSpan*5)/10;
                 self.setState(function(st){ return {tasks:st.tasks.map(function(t){ return t.id===taskId?Object.assign({},t,{estimatedHours:newHrs}):t; })}; });
                 var ti2=SL.indexOf(timeStr);
