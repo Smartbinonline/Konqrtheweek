@@ -89,10 +89,13 @@ export class PlannerLogic extends React.Component {
   getTodayIdx(tz){ try{ var str=new Date().toLocaleDateString("en-US",{weekday:"short",timeZone:tz}); var map={Mon:0,Tue:1,Wed:2,Thu:3,Fri:4,Sat:5,Sun:6}; return map[str]!==undefined?map[str]:(new Date().getDay()===0?6:new Date().getDay()-1);}catch(e){ var d=new Date().getDay(); return d===0?6:d-1; } }
   getNowInTz(tz){ try{ return new Date().toLocaleString("en-US",{timeZone:tz,hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).replace(/\s/g,""); }catch(e){ var n=new Date(); return this.pad2(n.getHours())+":"+this.pad2(n.getMinutes()); } }
   isResizing(){ return this.resizeGuard.active || Date.now() < this.resizeGuard.until; }
-  /* drop reference = TOP edge of the dragged block: subtract how many slots below the top it was grabbed */
-  adjSlot(time){
-    var SL=this.SL, off=this._dragOffSlots||0;
-    var ti=SL.indexOf(time)-off;
+  /* drop reference = TOP edge of the dragged rectangle (pixel-precise, snapped to nearest slot).
+     _dragOffPx = how far below the rectangle's top the user grabbed it. */
+  adjSlotFromEvent(e,time){
+    var SL=this.SL;
+    var r=e.currentTarget.getBoundingClientRect();
+    var shift=Math.round((e.clientY-(this._dragOffPx||0)-r.top)/34);
+    var ti=SL.indexOf(time)+shift;
     if(ti<0) ti=0; if(ti>=SL.length) ti=SL.length-1;
     return SL[ti];
   }
@@ -800,7 +803,7 @@ export class PlannerLogic extends React.Component {
       return {
         name:t.name, meta:(t.estimatedHours||1)+"h \u00B7 P"+t.priority+(t.parentId?" \u00B7 sub":"")+(gMap[t.groupId]?" \u00B7 "+gMap[t.groupId].name:""),
         style:Object.assign({padding:"7px 10px",marginBottom:5,borderRadius:8,cursor:"grab"},chip),
-        onDragStart:function(e){ self._dragOffSlots=0; e.dataTransfer.setData("text/plain",t.id); self.setState({dragId:t.id,dragOrigin:wk}); },
+        onDragStart:function(e){ self._dragOffPx=e.clientY-e.currentTarget.getBoundingClientRect().top; e.dataTransfer.setData("text/plain",t.id); self.setState({dragId:t.id,dragOrigin:wk}); },
         onDragEnd:function(){ self.setState({dragId:null,dragOrigin:null,dragHover:null}); },
         onClick:function(){ if(!s.dragId) self.openTaskModal(t); else self.setState({dragId:null}); }
       };
@@ -840,15 +843,15 @@ export class PlannerLogic extends React.Component {
           onDragOver:function(e){
             e.preventDefault();
             var did=self.state.dragId; /* live state — closure can be stale right after dragstart */
-            if(did){ var hk=c.di+"|"+self.adjSlot(time)+"|"+c.wkKey; if(self.state.dragHover!==hk) self.setState({dragHover:hk}); }
+            if(did){ var hk=c.di+"|"+self.adjSlotFromEvent(e,time)+"|"+c.wkKey; if(self.state.dragHover!==hk) self.setState({dragHover:hk}); }
           },
           onDrop:function(e){
             e.preventDefault();
-            var dropTime=self.adjSlot(time);
+            var dropTime=self.adjSlotFromEvent(e,time);
             var data=e.dataTransfer.getData("text/plain")||"";
-            if(data.indexOf("appt|")===0){ var pp=data.split("|"); self.moveAppt(pp[1],parseInt(pp[2],10),c.di,dropTime); self._dragOffSlots=0; return; }
+            if(data.indexOf("appt|")===0){ var pp=data.split("|"); self.moveAppt(pp[1],parseInt(pp[2],10),c.di,dropTime); self._dragOffPx=0; return; }
             var tid=data||s.dragId; if(tid) self.handleDrop(tid,c,dropTime);
-            self._dragOffSlots=0;
+            self._dragOffPx=0;
           },
           onClick:function(){
             if(s.dragId){ self.handleDrop(s.dragId,c,time); }
@@ -872,8 +875,7 @@ export class PlannerLogic extends React.Component {
               subStyle:{fontSize:8.5,fontWeight:600,color:"#FFD98A",textShadow:"0 1px 2px rgba(0,0,0,.9)"},
               cancelStyle:{position:"absolute",top:2,right:2,width:16,height:16,borderRadius:5,border:"1px solid rgba(255,255,255,.4)",background:"rgba(10,12,18,.6)",color:"#FFD98A",fontSize:9,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0},
               onDragStart:function(e){
-                var r=e.currentTarget.getBoundingClientRect();
-                self._dragOffSlots=Math.max(0,Math.floor((e.clientY-r.top)/34));
+                self._dragOffPx=Math.max(0,e.clientY-e.currentTarget.getBoundingClientRect().top);
                 e.dataTransfer.setData("text/plain",pTask.id); self.setState({dragId:pTask.id,dragOrigin:c.wkKey});
               },
               onDragEnd:function(){ self.setState({dragId:null,dragOrigin:null,dragHover:null}); },
@@ -912,8 +914,7 @@ export class PlannerLogic extends React.Component {
             style:Object.assign({position:"absolute",top:1,left:1,right:1,height:"calc("+(aE.span*100)+"% - 2px)",borderRadius:7,padding:"3px 7px",fontSize:10.5,fontWeight:700,zIndex:3,cursor:"grab",overflow:"hidden"},self.solidChip(ac,false)),
             onClick:function(e){ e.stopPropagation(); self.openApptModal(aE.appt); },
             onDragStart:function(e){
-              var r=e.currentTarget.getBoundingClientRect();
-              self._dragOffSlots=Math.max(0,Math.floor((e.clientY-r.top)/34));
+              self._dragOffPx=Math.max(0,e.clientY-e.currentTarget.getBoundingClientRect().top);
               e.dataTransfer.setData("text/plain","appt|"+aE.appt.id+"|"+c.di);
             }
           };
@@ -935,8 +936,7 @@ export class PlannerLogic extends React.Component {
             style:Object.assign({position:"absolute",top:1,left:1,right:1,height:"calc("+(entry.span*100)+"% - 2px)",borderRadius:7,padding:"3px 5px",fontSize:10.5,cursor:"grab",zIndex:2,lineHeight:1.28,display:"flex",flexDirection:"column",overflow:"hidden",textDecoration:task.completed?"line-through":"none"},chip),
             doneStyle:{width:20,height:20,borderRadius:6,border:"1px solid rgba(255,255,255,.6)",background:task.completed?"linear-gradient(180deg,#FFFFFF,rgba(255,255,255,.78))":"linear-gradient(180deg,rgba(255,255,255,.3),rgba(255,255,255,.10))",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0,flexShrink:0,boxShadow:"inset 0 1px 0 rgba(255,255,255,.5)"},
             onDragStart:function(e){
-              var r=e.currentTarget.getBoundingClientRect();
-              self._dragOffSlots=Math.max(0,Math.floor((e.clientY-r.top)/34));
+              self._dragOffPx=Math.max(0,e.clientY-e.currentTarget.getBoundingClientRect().top);
               e.dataTransfer.setData("text/plain",task.id); self.setState({dragId:task.id,dragOrigin:c.wkKey});
             },
             onDragEnd:function(){ self.setState({dragId:null,dragOrigin:null,dragHover:null}); },
