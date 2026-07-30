@@ -40,9 +40,28 @@ Cloud.prototype.login = async function (url, email, pass) {
   await this.pb.collection("users").authWithPassword(email, pass, NOKEY);
 };
 Cloud.prototype.logout = function () {
+  this.unsubscribe();
   if (this.pb) this.pb.authStore.clear();
   this._snapId = null;
   this._lastW = null;
+};
+/* realtime: server pushes snapshot changes from other devices instantly */
+Cloud.prototype.subscribe = async function (onData) {
+  if (!this.pb || !this.isAuthed()) return;
+  var self = this;
+  try {
+    await this.pb.collection("snapshots").subscribe("*", function (e) {
+      try {
+        if (!e || !e.record || !e.record.data) return;
+        var d = e.record.data;
+        if (d.savedAt && d.savedAt === self._lastSavedAt) return; // our own echo
+        onData(d);
+      } catch (err) {}
+    });
+  } catch (e) {}
+};
+Cloud.prototype.unsubscribe = function () {
+  try { if (this.pb) this.pb.collection("snapshots").unsubscribe("*"); } catch (e) {}
 };
 Cloud.prototype.pull = async function () {
   var uid = this.uid();
@@ -60,6 +79,7 @@ Cloud.prototype.pull = async function () {
 Cloud.prototype.push = async function (snapshot, wgoals) {
   var uid = this.uid();
   if (!uid) return;
+  this._lastSavedAt = snapshot && snapshot.savedAt;
   if (this._snapId) {
     try {
       await this.pb.collection("snapshots").update(this._snapId, { data: snapshot }, NOKEY);

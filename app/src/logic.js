@@ -135,6 +135,15 @@ export class PlannerLogic extends React.Component {
   openLoginModal(){
     this.setState({modal:{kind:"login"},draft:{url:cloud.url()||"https://",email:"",pass:"",err:null,busy:false}});
   }
+  startRealtime(){
+    var self=this;
+    cloud.subscribe(function(data){
+      clearTimeout(self._st);
+      self._syncDirty=false;
+      self.applySnapshot(data);
+      if(self.state.syncStatus!=="on") self.setState({syncStatus:"on"});
+    });
+  }
   async doLogin(){
     var d=this.state.draft; if(!d||!d.url||!d.email||!d.pass) return;
     this.patchDraft({busy:true,err:null});
@@ -143,6 +152,7 @@ export class PlannerLogic extends React.Component {
       this.setState({modal:null,draft:null});
       this.toast("Signed in \u2014 syncing\u2026");
       await this.cloudPull();
+      this.startRealtime();
     }catch(e){
       var msg = e && e.status===400 ? "Wrong email or password" : "Cannot reach server \u2014 check the URL";
       this.patchDraft({busy:false,err:msg});
@@ -192,7 +202,7 @@ export class PlannerLogic extends React.Component {
     window.addEventListener("beforeunload",this._bu);
     this._vis=function(){ if(document.visibilityState==="visible" && cloud.isAuthed() && !self._syncDirty){ self.cloudPull(); } };
     document.addEventListener("visibilitychange",this._vis);
-    if(cloud.isAuthed()){ setTimeout(function(){ self.cloudPull(); },300); }
+    if(cloud.isAuthed()){ setTimeout(function(){ self.cloudPull(); self.startRealtime(); },300); }
     else { setTimeout(function(){ self.toast("Tip: click \u25CB Sign in (top right) to sync across your devices"); },1200); }
   }
   componentWillUnmount(){ window.removeEventListener("resize",this._rz); window.removeEventListener("beforeunload",this._bu); document.removeEventListener("visibilitychange",this._vis); clearInterval(this._iv); clearTimeout(this._tt); clearTimeout(this._st); }
