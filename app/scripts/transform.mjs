@@ -40,6 +40,17 @@ function bindingOf(val) {
   const m = val.trim().match(/^\{\{\s*(.*?)\s*\}\}$/s);
   return m ? m[1] : null;
 }
+/* mixed literal+binding value ("color:{{ x }};...") -> JS template literal */
+function templateLiteral(val, scope) {
+  const parts = val.split(/(\{\{\s*[^}]*?\s*\}\})/g).filter((p) => p !== "");
+  let out = "`";
+  for (const p of parts) {
+    const b = bindingOf(p);
+    if (b !== null) out += "${" + qualify(b, scope) + "}";
+    else out += p.replace(/[`$\\]/g, (c) => "\\" + c);
+  }
+  return out + "`";
+}
 function jsstr(s) {
   return JSON.stringify(s);
 }
@@ -85,6 +96,7 @@ function emit(node, scope, indent) {
     const b = bindingOf(val);
     if (name === "style") {
       if (b) attrs.push(`style={${qualify(b, scope)}}`);
+      else if (val.includes("{{")) attrs.push(`style={css(${templateLiteral(val, scope)})}`);
       else attrs.push(`style={css(${jsstr(val)})}`);
     } else if (EVENT_MAP[name]) {
       if (b) attrs.push(`${EVENT_MAP[name]}={${qualify(b, scope)}}`);

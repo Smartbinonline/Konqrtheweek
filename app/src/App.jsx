@@ -38,7 +38,7 @@ export default class App extends PlannerLogic {
             <span style={css("font-size:11px;color:rgba(231,233,236,.45)")}>
               {v.clockLabel}
             </span>
-            <button onClick={v.onFilePill} title="Cloud sync" style={css("padding:5px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);color:{{ filePillColor }};font-size:10.5px;cursor:pointer")}>
+            <button onClick={v.onFilePill} title="Cloud sync" style={css(`padding:5px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);color:${v.filePillColor};font-size:10.5px;cursor:pointer`)}>
               {v.filePill}
             </button>
             <button onClick={v.onReset} style={css("padding:5px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);color:rgba(231,233,236,.5);font-size:10.5px;cursor:pointer")}>
@@ -699,7 +699,7 @@ export default class App extends PlannerLogic {
                   </label>
                   <div style={css("display:flex;gap:10px")}>
                     <div style={css("width:100%;margin-bottom:10px")}>
-                      <div style={css("font-size:11px;font-weight:600;color:{{ prv.fileStatusColor }};margin-bottom:4px")}>
+                      <div style={css(`font-size:11px;font-weight:600;color:${v.prv.fileStatusColor};margin-bottom:4px`)}>
                         {v.prv.fileStatusText}
                       </div>
                       <div style={css("font-size:11px;color:rgba(231,233,236,.5);line-height:1.5;margin-bottom:8px")}>
