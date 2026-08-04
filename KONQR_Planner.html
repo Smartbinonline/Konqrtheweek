@@ -2480,7 +2480,7 @@ option{background:#14181F;color:#E7E9EC}
                           </div>
                         </sc-if>
                         <sc-if value="{{ cell.appt }}" hint-placeholder-val="{{ false }}">
-                          <div sc-camel-on-click="{{ cell.appt.onClick }}" style="{{ cell.appt.style }}">{{ cell.appt.label }}</div>
+                          <div draggable="true" sc-camel-on-drag-start="{{ cell.appt.onDragStart }}" sc-camel-on-click="{{ cell.appt.onClick }}" style="{{ cell.appt.style }}">{{ cell.appt.label }}</div>
                         </sc-if>
                         <sc-if value="{{ cell.task }}" hint-placeholder-val="{{ false }}">
                           <div draggable="true" sc-camel-on-drag-start="{{ cell.task.onDragStart }}" sc-camel-on-click="{{ cell.task.onClick }}" sc-camel-on-mouse-enter="{{ cell.task.onEnter }}" sc-camel-on-mouse-leave="{{ cell.task.onLeave }}" style="{{ cell.task.style }}">
@@ -2867,14 +2867,30 @@ option{background:#14181F;color:#E7E9EC}
               <label style="font-size:9.5px;font-weight:700;letter-spacing:.14em;color:rgba(231,233,236,.42);display:block;margin-bottom:5px">NAME</label>
               <input value="{{ modal.d.name }}" sc-camel-on-change="{{ modal.onName }}" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.06);font-size:14px">
             </div>
-            <div>
-              <label style="font-size:9.5px;font-weight:700;letter-spacing:.14em;color:rgba(231,233,236,.42);display:block;margin-bottom:7px">DAY(S)</label>
-              <div style="display:flex;gap:5px;flex-wrap:wrap">
-                <sc-for list="{{ modal.dayBtns }}" as="d" hint-placeholder-count="7">
-                  <button sc-camel-on-click="{{ d.onClick }}" style="{{ d.style }}">{{ d.label }}</button>
-                </sc-for>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+              <div>
+                <label style="font-size:9.5px;font-weight:700;letter-spacing:.14em;color:rgba(231,233,236,.42);display:block;margin-bottom:5px">DATE</label>
+                <input type="date" value="{{ modal.d.date }}" sc-camel-on-change="{{ modal.onDate }}" style="width:100%;padding:9px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.06);font-size:13.5px;color-scheme:dark">
+              </div>
+              <div>
+                <label style="font-size:9.5px;font-weight:700;letter-spacing:.14em;color:rgba(231,233,236,.42);display:block;margin-bottom:5px">REPEAT</label>
+                <sc-raw-select value="{{ modal.d.recurring }}" sc-camel-on-change="{{ modal.onRecurring }}" style="width:100%;padding:9px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.06);font-size:13.5px">
+                  <sc-for list="{{ modal.recOpts }}" as="o" hint-placeholder-count="5">
+                    <option value="{{ o.value }}">{{ o.label }}</option>
+                  </sc-for>
+                </sc-raw-select>
               </div>
             </div>
+            <sc-if value="{{ modal.showDays }}" hint-placeholder-val="{{ false }}">
+              <div>
+                <label style="font-size:9.5px;font-weight:700;letter-spacing:.14em;color:rgba(231,233,236,.42);display:block;margin-bottom:7px">ON DAY(S)</label>
+                <div style="display:flex;gap:5px;flex-wrap:wrap">
+                  <sc-for list="{{ modal.dayBtns }}" as="d" hint-placeholder-count="7">
+                    <button sc-camel-on-click="{{ d.onClick }}" style="{{ d.style }}">{{ d.label }}</button>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
               <div>
                 <label style="font-size:9.5px;font-weight:700;letter-spacing:.14em;color:rgba(231,233,236,.42);display:block;margin-bottom:5px">TIME</label>
@@ -2992,7 +3008,7 @@ class Component extends DCLogic {
     {id:"t24",name:"Oil Change VW",groupId:"g7",priority:3,estimatedHours:1,completed:false,recurring:"none",description:"",parentId:null,status:"active"},
     {id:"t25",name:"GT Wine",groupId:"g7",priority:3,estimatedHours:1,completed:false,recurring:"none",description:"",parentId:null,status:"active"}
   ];
-  SA = [{id:"a01",name:"Dentist",days:[3],time:"10:00",duration:1,color:"#DC2626",notes:"Regular checkup"}];
+  SA = [{id:"a01",name:"Dentist",days:[3],recurring:"weekly",time:"10:00",duration:1,color:"#DC2626",notes:"Regular checkup"}];
   SGo = ["Sell Marama $1,400,000","Investments return 25%","SmartBin $1,000,000 sales","Travel","Cashflow to pay for life","Fun","Leverage AI & Software Products","Get off Job Seeker"];
   SEED_M = "Ians Advancement - Power of choices from profit. Financially Independent through Passive Income. Choices to Retire. Transfer effort to own software products (High Margin, no capital). More money in Investing. Cheap place to live in NZ with Income. Spend winters offshore.";
   SPr = {
@@ -3204,14 +3220,48 @@ class Component extends DCLogic {
 
   /* ---------- derived ---------- */
   gMap(){ var m={}; this.state.groups.forEach(function(g){ m[g.id]=g; }); return m; }
-  apptMap(){
-    var m={}, SL=this.SL;
-    this.state.appts.forEach(function(a){
-      var span=Math.max(1,Math.ceil((a.duration||1)*2));
-      var ti=SL.indexOf(a.time); if(ti<0) return;
-      (a.days||[]).forEach(function(di){ for(var i=0;i<span&&ti+i<SL.length;i++) m[di+"-"+SL[ti+i]]={apptId:a.id,isStart:i===0,span:span,appt:a}; });
-    });
+  parseKey(s){ var p=String(s).split("-"); return new Date(Number(p[0]),Number(p[1])-1,Number(p[2])); }
+  apptRec(a){ var r=a.recurring; if(r===undefined||r===null||r===""){ return (a.days&&a.days.length)?"weekly":"none"; } return r; }
+  occursOn(a,d,di){
+    var rec=this.apptRec(a);
+    if(rec==="daily") return true;
+    if(rec==="weekdays") return di<5;
+    if(rec==="weekly"){
+      if(a.days&&a.days.length) return a.days.indexOf(di)>=0;
+      if(a.date){ var ad=this.parseKey(a.date); var dow=ad.getDay(); return (dow===0?6:dow-1)===di; }
+      return false;
+    }
+    if(rec==="monthly"){ return a.date ? Number(a.date.slice(8,10))===d.getDate() : false; }
+    if(a.date) return a.date===this.localKey(d);
+    if(a.days&&a.days.length) return a.days.indexOf(di)>=0;
+    return false;
+  }
+  apptMapForWeek(mon){
+    var m={}, SL=this.SL, self=this;
+    for(var di=0; di<7; di++){
+      var d=new Date(mon); d.setDate(d.getDate()+di);
+      this.state.appts.forEach(function(a){
+        if(!self.occursOn(a,d,di)) return;
+        var span=Math.max(1,Math.ceil((a.duration||1)*2));
+        var ti=SL.indexOf(a.time); if(ti<0) return;
+        for(var i=0;i<span&&ti+i<SL.length;i++) m[di+"-"+SL[ti+i]]={apptId:a.id,isStart:i===0,span:span,appt:a};
+      });
+    }
     return m;
+  }
+  apptMap(){ return this.apptMapForWeek(this.getMon(new Date(this.state.anchorMs))); }
+  rescheduleAppt(aid,col,time){
+    var self=this;
+    this.setState(function(st){
+      return {appts:st.appts.map(function(a){
+        if(a.id!==aid) return a;
+        var rec=self.apptRec(a);
+        var n=Object.assign({},a,{date:self.localKey(col.date),time:time,recurring:rec});
+        if(rec==="weekly") n.days=[col.di];
+        return n;
+      })};
+    });
+    this.toast("Appointment moved");
   }
   setWCal(fn){
     var wk=this.wk();
@@ -3225,7 +3275,7 @@ class Component extends DCLogic {
   /* ---------- actions ---------- */
   placeTask(tid,col,time){
     this.pushUndo();
-    var self=this, am=this.apptMap(), SL=this.SL;
+    var self=this, am=this.apptMapForWeek(this.getMon(col.date)), SL=this.SL;
     var task=this.state.tasks.find(function(t){ return t.id===tid; }); if(!task) return;
     var span=Math.max(1,Math.ceil((task.estimatedHours||1)*2));
     var ti=SL.indexOf(time); if(ti<0) return;
@@ -3508,7 +3558,12 @@ class Component extends DCLogic {
     this.setState({modal:{kind:"task"},draft: t&&t.id ? Object.assign({},t) : {name:"",description:"",groupId:"",priority:3,estimatedHours:1,recurring:"none",status:"active",parentId:null}});
   }
   openGroupModal(g){ this.setState({modal:{kind:"group"},draft: g&&g.id?Object.assign({},g):{name:"",color:"#6366F1"}}); }
-  openApptModal(a){ this.setState({modal:{kind:"appt"},draft: a&&a.id?Object.assign({},a):{name:"",time:"09:00",duration:1,color:"#DC2626",notes:"",days:[1]}}); }
+  openApptModal(a){
+    var draft;
+    if(a&&a.id){ draft=Object.assign({},a); draft.recurring=this.apptRec(a); if(!draft.date) draft.date=this.localKey(new Date(this.state.anchorMs)); }
+    else { draft={name:"",date:this.localKey(new Date()),recurring:"none",time:"09:00",duration:1,color:"#DC2626",notes:"",days:[]}; }
+    this.setState({modal:{kind:"appt"},draft:draft});
+  }
   closeModal(){ this.setState({modal:null,draft:null}); }
 
   saveGroupDraft(){
@@ -3520,18 +3575,23 @@ class Component extends DCLogic {
     });
   }
   saveApptDraft(){
-    var d=this.state.draft; if(!d.name||!d.name.trim()||!(d.days||[]).length) return;
+    var d=this.state.draft; if(!d.name||!d.name.trim()) return;
+    if(!d.date&&(d.recurring==="none"||d.recurring==="monthly")) return;
     var self=this;
     this.setState(function(s){
       var exists=d.id&&s.appts.find(function(a){ return a.id===d.id; });
       var norm=Object.assign({},d,{duration:Number(d.duration)});
+      if(norm.recurring==="weekly"&&(!norm.days||!norm.days.length)&&norm.date){ var ad=self.parseKey(norm.date); var dow=ad.getDay(); norm.days=[dow===0?6:dow-1]; }
+      if(norm.recurring!=="weekly") norm.days=[];
       return {appts: exists ? s.appts.map(function(a){ return a.id===d.id?norm:a; }) : s.appts.concat([Object.assign({},norm,{id:self.uid()})]), modal:null, draft:null};
     });
   }
 
   /* ---------- render values ---------- */
   renderVals(){
-    var self=this, s=this.state, SL=this.SL, gMap=this.gMap(), am=this.apptMap();
+    var self=this, s=this.state, SL=this.SL, gMap=this.gMap();
+    var amCache={};
+    function amFor(c){ if(!amCache[c.wkKey]) amCache[c.wkKey]=self.apptMapForWeek(self.getMon(c.date)); return amCache[c.wkKey]; }
     var accent=this.accent();
     var tz=s.prefs.timezone||"Pacific/Auckland";
     var viewStart=new Date(s.anchorMs);
@@ -3644,13 +3704,13 @@ class Component extends DCLogic {
       var inSlot=(nowH===slotH)&&(nowM>=slotM)&&(nowM<slotM+30);
       var nowPct=inSlot?((nowM-slotM)/30)*100:0;
       var cells=cols.map(function(c){
-        var colCal=s.cal[c.wkKey]||{}, ck=c.di+"-"+time, entry=colCal[ck], aE=am[ck];
+        var colCal=s.cal[c.wkKey]||{}, ck=c.di+"-"+time, entry=colCal[ck], aE=amFor(c)[ck];
         var task=entry?s.tasks.find(function(t){ return t.id===entry.taskId; }):null;
         var cell={
           style:{borderTop:isH?"1px solid rgba(255,255,255,.11)":"1px solid rgba(255,255,255,.045)",borderLeft:"1px solid rgba(255,255,255,.045)",minHeight:34,padding:1,position:"relative",
             background: (aE&&!entry) ? "rgba(220,38,38,.10)" : (s.dragId?"rgba(109,90,240,.09)":"transparent")},
           onDragOver:function(e){ e.preventDefault(); },
-          onDrop:function(e){ e.preventDefault(); var tid=e.dataTransfer.getData("text/plain")||s.dragId; if(tid) self.handleDrop(tid,c,time); },
+          onDrop:function(e){ e.preventDefault(); var tid=e.dataTransfer.getData("text/plain")||s.dragId; if(tid&&tid.slice(0,5)==="appt:"){ self.rescheduleAppt(tid.slice(5),c,time); } else if(tid) self.handleDrop(tid,c,time); },
           onClick:function(){ if(s.dragId) self.handleDrop(s.dragId,c,time); },
           meal:meal||null, appt:null, task:null,
           todayStyle:c.isToday?{position:"absolute",left:-1,top:-1,bottom:-1,width:2,background:entry?"rgba(255,255,255,.85)":accent,zIndex:6,pointerEvents:"none"}:null,
@@ -3659,6 +3719,7 @@ class Component extends DCLogic {
         if(aE&&aE.isStart&&!entry){
           var ac=aE.appt.color||"#DC2626";
           cell.appt={
+            onDragStart:function(e){ e.stopPropagation(); e.dataTransfer.setData("text/plain","appt:"+aE.appt.id); },
             label:"\u25CE  "+aE.appt.name,
             style:Object.assign({position:"absolute",top:1,left:1,right:1,height:"calc("+(aE.span*100)+"% - 2px)",borderRadius:7,padding:"3px 7px",fontSize:10.5,fontWeight:700,zIndex:3,cursor:"pointer",overflow:"hidden"},self.solidChip(ac,false)),
             onClick:function(e){ e.stopPropagation(); self.openApptModal(aE.appt); }
@@ -3918,6 +3979,10 @@ class Component extends DCLogic {
         modal={
           title:d.id?"Edit Appointment":"New Appointment", isAppt:true, d:d, saveLabel:d.id?"Update":"Create", canDelete:!!d.id,
           slotOpts:slotOpts,
+          recOpts:[{value:"none",label:"One-off"},{value:"daily",label:"Daily"},{value:"weekdays",label:"Weekdays"},{value:"weekly",label:"Weekly"},{value:"monthly",label:"Monthly"}],
+          onDate:function(e){ self.patchDraft({date:e.target.value}); },
+          onRecurring:function(e){ self.patchDraft({recurring:e.target.value}); },
+          showDays:d.recurring==="weekly",
           dayBtns:this.DAYS.map(function(dn,i){
             var on=(d.days||[]).indexOf(i)>=0;
             return {label:dn.slice(0,3),style:self.glassBtn(on),
