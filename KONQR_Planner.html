@@ -2480,7 +2480,7 @@ option{background:#14181F;color:#E7E9EC}
                           </div>
                         </sc-if>
                         <sc-if value="{{ cell.appt }}" hint-placeholder-val="{{ false }}">
-                          <div draggable="true" sc-camel-on-drag-start="{{ cell.appt.onDragStart }}" sc-camel-on-click="{{ cell.appt.onClick }}" style="{{ cell.appt.style }}">{{ cell.appt.label }}</div>
+                          <div draggable="true" sc-camel-on-drag-start="{{ cell.appt.onDragStart }}" sc-camel-on-click="{{ cell.appt.onClick }}" style="{{ cell.appt.style }}"><div style="flex:1;overflow:hidden">{{ cell.appt.label }}</div><div sc-camel-on-mouse-down="{{ cell.appt.onResize }}" title="Drag to resize duration" style="height:8px;cursor:ns-resize;border-top:2px solid rgba(255,255,255,.65);margin:0 -7px -3px;flex-shrink:0"></div></div>
                         </sc-if>
                         <sc-if value="{{ cell.task }}" hint-placeholder-val="{{ false }}">
                           <div draggable="true" sc-camel-on-drag-start="{{ cell.task.onDragStart }}" sc-camel-on-click="{{ cell.task.onClick }}" sc-camel-on-mouse-enter="{{ cell.task.onEnter }}" sc-camel-on-mouse-leave="{{ cell.task.onLeave }}" style="{{ cell.task.style }}">
@@ -2858,6 +2858,13 @@ option{background:#14181F;color:#E7E9EC}
               <button sc-camel-on-click="{{ onCloseModal }}" style="padding:8px 14px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#E7E9EC;font-size:12.5px;cursor:pointer">Cancel</button>
               <button sc-camel-on-click="{{ modal.onSave }}" style="{{ primaryBtnStyle }}">{{ modal.saveLabel }}</button>
             </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ modal.isSlot }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <button sc-camel-on-click="{{ modal.onSlotTask }}" style="width:100%;padding:14px;font-size:14px;border-radius:12px;border:none;background:#6D5AF0;color:#fff;cursor:pointer;font-weight:700">+ Task here</button>
+            <button sc-camel-on-click="{{ modal.onSlotAppt }}" style="width:100%;padding:14px;font-size:14px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(220,38,38,.22);color:#F4F6F8;cursor:pointer;font-weight:700">+ Appointment here</button>
           </div>
         </sc-if>
 
@@ -3350,6 +3357,7 @@ class Component extends DCLogic {
       var base=(payload.name||"").replace(/ \(\d+\/\d+\)$/,"");
       var parts=[];
       for(var i=0;i<n;i++) parts.push({name:base+" - Part "+(i+1),hours:i===n-1?last:each});
+      if(this.state.pendingPlace) this.setState({pendingPlace:null});
       this.setState({modal:{kind:"split"},draft:{parent:payload,parts:parts,total:hrs}});
       return;
     }
@@ -3358,6 +3366,15 @@ class Component extends DCLogic {
     var updated = (payload.id&&old) ? s.tasks.map(function(t){ return t.id===payload.id?Object.assign({},payload,{id:tid}):t; })
                                     : s.tasks.concat([Object.assign({},payload,{id:tid,completed:false})]);
     this.setState({tasks:updated,modal:null,draft:null});
+    var pend=this.state.pendingPlace;
+    if(pend){
+      this.setState({pendingPlace:null});
+      if(!payload.id){
+        var self2=this, pcol=pend.col, ptm=pend.time;
+        if(pcol&&pcol.date&&!(pcol.date instanceof Date)) pcol=Object.assign({},pcol,{date:new Date(pcol.date)});
+        setTimeout(function(){ self2.placeTask(tid,pcol,ptm); },0);
+      }
+    }
     var SL=this.SL, am=this.apptMap(), prefs=s.prefs;
     var recurChanged = old && old.recurring!==payload.recurring;
     var hoursChanged = old && old.estimatedHours!==payload.estimatedHours;
@@ -3558,6 +3575,11 @@ class Component extends DCLogic {
     this.setState({modal:{kind:"task"},draft: t&&t.id ? Object.assign({},t) : {name:"",description:"",groupId:"",priority:3,estimatedHours:1,recurring:"none",status:"active",parentId:null}});
   }
   openGroupModal(g){ this.setState({modal:{kind:"group"},draft: g&&g.id?Object.assign({},g):{name:"",color:"#6366F1"}}); }
+  openSlotModal(col,time){
+    var d=new Date(col.date);
+    this.setState({modal:{kind:"slot"},draft:{col:{di:col.di,wkKey:col.wkKey,date:col.date},time:time,
+      label:this.DAYS[col.di]+" "+d.toLocaleDateString("en-NZ",{day:"numeric",month:"short"})+" \u00B7 "+time}});
+  }
   openApptModal(a){
     var draft;
     if(a&&a.id){ draft=Object.assign({},a); draft.recurring=this.apptRec(a); if(!draft.date) draft.date=this.localKey(new Date(this.state.anchorMs)); }
@@ -3711,7 +3733,7 @@ class Component extends DCLogic {
             background: (aE&&!entry) ? "rgba(220,38,38,.10)" : (s.dragId?"rgba(109,90,240,.09)":"transparent")},
           onDragOver:function(e){ e.preventDefault(); },
           onDrop:function(e){ e.preventDefault(); var tid=e.dataTransfer.getData("text/plain")||s.dragId; if(tid&&tid.slice(0,5)==="appt:"){ self.rescheduleAppt(tid.slice(5),c,time); } else if(tid) self.handleDrop(tid,c,time); },
-          onClick:function(){ if(s.dragId) self.handleDrop(s.dragId,c,time); },
+          onClick:function(){ if(s.dragId){ self.handleDrop(s.dragId,c,time); } else if(!entry && !aE){ self.openSlotModal(c,time); } },
           meal:meal||null, appt:null, task:null,
           todayStyle:c.isToday?{position:"absolute",left:-1,top:-1,bottom:-1,width:2,background:entry?"rgba(255,255,255,.85)":accent,zIndex:6,pointerEvents:"none"}:null,
           nowStyle:inSlot?{position:"absolute",left:0,right:0,top:nowPct+"%",height:0,zIndex:7,pointerEvents:"none",borderTop:"2px solid "+(entry?"rgba(255,255,255,.9)":"#FF3D6E"),boxShadow:"0 0 8px rgba(255,61,110,.8)"}:null
@@ -3721,8 +3743,21 @@ class Component extends DCLogic {
           cell.appt={
             onDragStart:function(e){ e.stopPropagation(); e.dataTransfer.setData("text/plain","appt:"+aE.appt.id); },
             label:"\u25CE  "+aE.appt.name,
-            style:Object.assign({position:"absolute",top:1,left:1,right:1,height:"calc("+(aE.span*100)+"% - 2px)",borderRadius:7,padding:"3px 7px",fontSize:10.5,fontWeight:700,zIndex:3,cursor:"pointer",overflow:"hidden"},self.solidChip(ac,false)),
-            onClick:function(e){ e.stopPropagation(); self.openApptModal(aE.appt); }
+            style:Object.assign({position:"absolute",top:1,left:1,right:1,height:"calc("+(aE.span*100)+"% - 2px)",borderRadius:7,padding:"3px 7px",fontSize:10.5,fontWeight:700,zIndex:3,cursor:"pointer",overflow:"hidden",display:"flex",flexDirection:"column"},self.solidChip(ac,false)),
+            onClick:function(e){ e.stopPropagation(); if(self.isResizing()) return; self.openApptModal(aE.appt); },
+            onResize:function(e){
+              e.stopPropagation(); e.preventDefault();
+              self.resizeGuard.active=true;
+              var startY=e.clientY, origSpan=aE.span, aid=aE.appt.id;
+              var onMove=function(ev){
+                var diff=Math.round((ev.clientY-startY)/34);
+                var newSpan=Math.max(1,Math.min(origSpan+diff,16));
+                var newDur=Math.round(newSpan*5)/10;
+                self.setState(function(st){ return {appts:st.appts.map(function(a){ return a.id===aid?Object.assign({},a,{duration:newDur}):a; })}; });
+              };
+              var onUp=function(){ self.resizeGuard.active=false; self.resizeGuard.until=Date.now()+400; document.removeEventListener("mousemove",onMove); document.removeEventListener("mouseup",onUp); };
+              document.addEventListener("mousemove",onMove); document.addEventListener("mouseup",onUp);
+            }
           };
         }
         if(task&&entry.isStart){
@@ -3973,6 +4008,14 @@ class Component extends DCLogic {
           onName:function(e){ self.patchDraft({name:e.target.value}); },
           onSave:function(){ self.saveGroupDraft(); },
           onDelete:function(){ var id=d.id; self.setState(function(st){ return {groups:st.groups.filter(function(g){ return g.id!==id; }),modal:null,draft:null}; }); }
+        };
+      } else if(kind==="slot"){
+        modal={
+          title:"Add at "+d.label, isSlot:true,
+          onSlotTask:function(){ var col=d.col, tm=d.time; self.setState({pendingPlace:{col:col,time:tm},modal:{kind:"task"},draft:{name:"",description:"",groupId:"",priority:3,estimatedHours:1,recurring:"none",status:"active",parentId:null}}); },
+          onSlotAppt:function(){ var col=d.col, tm=d.time;
+            self.setState({modal:{kind:"appt"},draft:{name:"",date:self.localKey(col.date),recurring:"none",time:tm,duration:1,color:"#DC2626",notes:"",days:[]}});
+          }
         };
       } else if(kind==="appt"){
         var ACL=["#DC2626","#F97316","#2563EB","#10B981","#8B5CF6","#EC4899"];
