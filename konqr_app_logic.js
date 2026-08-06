@@ -1,4 +1,3 @@
-
 class Component extends DCLogic {
   DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
   PL = { 1:"Urgent / Important", 2:"Important", 3:"Not Important", 4:"Not Important / Not Urgent" };
@@ -6,6 +5,7 @@ class Component extends DCLogic {
   RO = [{value:"none",label:"No repeat"},{value:"daily",label:"Daily"},{value:"weekdays",label:"Weekdays"},{value:"weekly",label:"Weekly"},{value:"monthly",label:"Monthly"}];
   MEAL_SLOTS = { "07:30":"Breakfast", "12:30":"Lunch", "18:00":"Dinner" };
   MAX_HRS = 4;
+  GOAL_COLORS = ["#F59E0B","#22D3EE","#A78BFA","#34D399"];
   SL = (function(){ var s=[]; for(var h=6;h<=20;h++) for(var m=0;m<60;m+=30) s.push((h<10?"0"+h:""+h)+":"+(m===0?"00":"30")); return s; })();
   TZS = ["Pacific/Auckland","Pacific/Chatham","Australia/Sydney","Australia/Melbourne","Australia/Brisbane","Australia/Perth","Asia/Hong_Kong","Asia/Singapore","Asia/Tokyo","Asia/Bangkok","Asia/Kolkata","Europe/London","Europe/Paris","Europe/Berlin","America/New_York","America/Chicago","America/Denver","America/Los_Angeles","Pacific/Honolulu"];
   STATUS_OPTIONS = [
@@ -48,7 +48,7 @@ class Component extends DCLogic {
     {id:"t24",name:"Oil Change VW",groupId:"g7",priority:3,estimatedHours:1,completed:false,recurring:"none",description:"",parentId:null,status:"active"},
     {id:"t25",name:"GT Wine",groupId:"g7",priority:3,estimatedHours:1,completed:false,recurring:"none",description:"",parentId:null,status:"active"}
   ];
-  SA = [{id:"a01",name:"Dentist",days:[3],time:"10:00",duration:1,color:"#DC2626",notes:"Regular checkup"}];
+  SA = [{id:"a01",name:"Dentist",days:[3],recurring:"weekly",time:"10:00",duration:1,color:"#DC2626",notes:"Regular checkup"}];
   SGo = ["Sell Marama $1,400,000","Investments return 25%","SmartBin $1,000,000 sales","Travel","Cashflow to pay for life","Fun","Leverage AI & Software Products","Get off Job Seeker"];
   SEED_M = "Ians Advancement - Power of choices from profit. Financially Independent through Passive Income. Choices to Retire. Transfer effort to own software products (High Margin, no capital). More money in Investing. Cheap place to live in NZ with Income. Spend winters offshore.";
   SPr = {
@@ -67,7 +67,8 @@ class Component extends DCLogic {
 
   state = {
     view:"calendar", tasks:this.ST, groups:this.SG, goals:this.SGo, mission:this.SEED_M,
-    cal:{}, appts:this.SA, prefs:this.SPr, wgoals:{}, loaded:false,
+    cal:{}, appts:this.SA, prefs:this.SPr, wgoals:{}, gweek:{}, loaded:false,
+    lensGoal:null, taskPanel:false, stepDrag:null,
     anchorMs:this.getMon(new Date()).getTime(), dragId:null, dragOrigin:null,
     plFilter:"all", editWG:-1, wgDraft:"", nowTick:Date.now(), mobDay:0, sideOpen:false,
     isMob:false, isPortrait:false, navHover:null, drawerOpen:false, hoverTask:null,
@@ -93,13 +94,13 @@ class Component extends DCLogic {
   hasFS(){ return "showOpenFilePicker" in window; }
   buildSnapshot(){
     var s=this.state;
-    return { app:"KONQR", version:13, savedAt:new Date().toISOString(),
+    return { app:"KONQR", version:14, savedAt:new Date().toISOString(),
       tasks:s.tasks, groups:s.groups, goals:s.goals, mission:s.mission,
-      cal:s.cal, appts:s.appts, prefs:s.prefs, wgoals:s.wgoals };
+      cal:s.cal, appts:s.appts, prefs:s.prefs, wgoals:s.wgoals, gweek:s.gweek };
   }
   applySnapshot(d){
     var p={};
-    ["tasks","groups","goals","mission","cal","appts","prefs","wgoals"].forEach(function(k){ if(d[k]!==undefined) p[k]=d[k]; });
+    ["tasks","groups","goals","mission","cal","appts","prefs","wgoals","gweek"].forEach(function(k){ if(d[k]!==undefined) p[k]=d[k]; });
     this.setState(p);
   }
   scheduleFileSave(){
@@ -211,7 +212,7 @@ class Component extends DCLogic {
     this.setState({
       tasks:this.ld("v13-tasks",this.ST), groups:this.ld("v13-groups",this.SG), goals:this.ld("v13-goals",this.SGo),
       mission:this.ld("v13-mission",this.SEED_M), cal:this.ld("v13-cal",{}), appts:this.ld("v13-appts",this.SA),
-      prefs:this.ld("v13-prefs",this.SPr), wgoals:this.ld("v13-wgoals",{}) || {}, loaded:true, fileStatus:"off", fileName:"",
+      prefs:this.ld("v13-prefs",this.SPr), wgoals:this.ld("v13-wgoals",{}) || {}, gweek:this.ld("v13-gweek",{}) || {}, loaded:true, fileStatus:"off", fileName:"",
       isMob: window.innerWidth < 820, isPortrait: window.innerHeight > window.innerWidth
     });
     this._rz=function(){ self.setState({isMob: window.innerWidth < 820, isPortrait: window.innerHeight > window.innerWidth}); };
@@ -220,29 +221,28 @@ class Component extends DCLogic {
     this._bu=function(e){ if(self._fileDirty && self._fileHandle){ self.writeDataFile(); } };
     window.addEventListener("beforeunload",this._bu);
     setTimeout(function(){ if(!self._fileHandle && self.hasFS()){ self.toast("Tip: click \u25CB Data file (top right) to load your synced data"); } },1200);
+    this._rib=function(){ self.scheduleRibbons(); };
+    window.addEventListener("scroll",this._rib,true);
+    window.addEventListener("resize",this._rib);
+    this.scheduleRibbons();
   }
-  componentWillUnmount(){ window.removeEventListener("resize",this._rz); window.removeEventListener("beforeunload",this._bu); clearInterval(this._iv); clearTimeout(this._tt); clearTimeout(this._ft); }
+  componentWillUnmount(){ window.removeEventListener("resize",this._rz); window.removeEventListener("beforeunload",this._bu); clearInterval(this._iv); clearTimeout(this._tt); clearTimeout(this._ft); window.removeEventListener("scroll",this._rib,true); window.removeEventListener("resize",this._rib); var sv=document.getElementById("konqr-ribbons"); if(sv&&sv.parentNode) sv.parentNode.removeChild(sv); }
   componentDidUpdate(pp, ps){
     if(!this.state.loaded) return;
     var s=this.state;
     this.sv("v13-tasks",s.tasks); this.sv("v13-groups",s.groups); this.sv("v13-goals",s.goals);
     this.sv("v13-mission",s.mission); this.sv("v13-cal",s.cal); this.sv("v13-appts",s.appts);
-    this.sv("v13-prefs",s.prefs); this.sv("v13-wgoals",s.wgoals);
-    var dataChanged = !ps || ps.tasks!==s.tasks || ps.groups!==s.groups || ps.goals!==s.goals || ps.mission!==s.mission || ps.cal!==s.cal || ps.appts!==s.appts || ps.prefs!==s.prefs || ps.wgoals!==s.wgoals;
+    this.sv("v13-prefs",s.prefs); this.sv("v13-wgoals",s.wgoals); this.sv("v13-gweek",s.gweek);
+    var dataChanged = !ps || ps.tasks!==s.tasks || ps.groups!==s.groups || ps.goals!==s.goals || ps.mission!==s.mission || ps.cal!==s.cal || ps.appts!==s.appts || ps.prefs!==s.prefs || ps.wgoals!==s.wgoals || ps.gweek!==s.gweek;
     if(dataChanged) this.scheduleFileSave();
+    this.scheduleRibbons();
   }
 
   /* ---------- styling helpers ---------- */
   accent(){ return this.props.accent || "#6D5AF0"; }
   glossAmt(){ var g=this.props.gloss; return g===undefined||g===null?1:Number(g); }
-  glossFill(hex){
-    var g=this.glossAmt();
-    return "linear-gradient(180deg,rgba(255,255,255,"+(0.26*g).toFixed(3)+"),rgba(255,255,255,"+(0.04*g).toFixed(3)+") 46%,rgba(0,0,0,"+(0.16*g).toFixed(3)+")), "+hex;
-  }
-  glossShadow(){
-    var g=this.glossAmt();
-    return "inset 0 1px 0 rgba(255,255,255,"+(0.4*g).toFixed(2)+"), inset 0 -1px 0 rgba(0,0,0,.25), 0 10px 22px -14px rgba(0,0,0,.95)";
-  }
+  glossFill(hex){ return hex; }
+  glossShadow(){ return "none"; }
   solidChip(hex,dim){
     return {
       background:this.glossFill(dim?"#3B4149":hex),
@@ -260,14 +260,48 @@ class Component extends DCLogic {
 
   /* ---------- derived ---------- */
   gMap(){ var m={}; this.state.groups.forEach(function(g){ m[g.id]=g; }); return m; }
-  apptMap(){
-    var m={}, SL=this.SL;
-    this.state.appts.forEach(function(a){
-      var span=Math.max(1,Math.ceil((a.duration||1)*2));
-      var ti=SL.indexOf(a.time); if(ti<0) return;
-      (a.days||[]).forEach(function(di){ for(var i=0;i<span&&ti+i<SL.length;i++) m[di+"-"+SL[ti+i]]={apptId:a.id,isStart:i===0,span:span,appt:a}; });
-    });
+  parseKey(s){ var p=String(s).split("-"); return new Date(Number(p[0]),Number(p[1])-1,Number(p[2])); }
+  apptRec(a){ var r=a.recurring; if(r===undefined||r===null||r===""){ return (a.days&&a.days.length)?"weekly":"none"; } return r; }
+  occursOn(a,d,di){
+    var rec=this.apptRec(a);
+    if(rec==="daily") return true;
+    if(rec==="weekdays") return di<5;
+    if(rec==="weekly"){
+      if(a.days&&a.days.length) return a.days.indexOf(di)>=0;
+      if(a.date){ var ad=this.parseKey(a.date); var dow=ad.getDay(); return (dow===0?6:dow-1)===di; }
+      return false;
+    }
+    if(rec==="monthly"){ return a.date ? Number(a.date.slice(8,10))===d.getDate() : false; }
+    if(a.date) return a.date===this.localKey(d);
+    if(a.days&&a.days.length) return a.days.indexOf(di)>=0;
+    return false;
+  }
+  apptMapForWeek(mon){
+    var m={}, SL=this.SL, self=this;
+    for(var di=0; di<7; di++){
+      var d=new Date(mon); d.setDate(d.getDate()+di);
+      this.state.appts.forEach(function(a){
+        if(!self.occursOn(a,d,di)) return;
+        var span=Math.max(1,Math.ceil((a.duration||1)*2));
+        var ti=SL.indexOf(a.time); if(ti<0) return;
+        for(var i=0;i<span&&ti+i<SL.length;i++) m[di+"-"+SL[ti+i]]={apptId:a.id,isStart:i===0,span:span,appt:a};
+      });
+    }
     return m;
+  }
+  apptMap(){ return this.apptMapForWeek(this.getMon(new Date(this.state.anchorMs))); }
+  rescheduleAppt(aid,col,time){
+    var self=this;
+    this.setState(function(st){
+      return {appts:st.appts.map(function(a){
+        if(a.id!==aid) return a;
+        var rec=self.apptRec(a);
+        var n=Object.assign({},a,{date:self.localKey(col.date),time:time,recurring:rec});
+        if(rec==="weekly") n.days=[col.di];
+        return n;
+      })};
+    });
+    this.toast("Appointment moved");
   }
   setWCal(fn){
     var wk=this.wk();
@@ -275,13 +309,229 @@ class Component extends DCLogic {
   }
   pushUndo(){
     var s=this.state, wk=this.wk();
-    this.setState(function(st){ return {undoStack: st.undoStack.concat([{cal:JSON.parse(JSON.stringify(st.cal[wk]||{})),tasks:JSON.parse(JSON.stringify(st.tasks))}]).slice(-20)}; });
+    this.setState(function(st){ return {undoStack: st.undoStack.concat([{cal:JSON.parse(JSON.stringify(st.cal[wk]||{})),tasks:JSON.parse(JSON.stringify(st.tasks)),gweek:JSON.parse(JSON.stringify(st.gweek))}]).slice(-20)}; });
+  }
+
+  /* ---------- weekly goals (goal-centric planning) ---------- */
+  goalsWk(wk){ return this.state.gweek[wk]||[]; }
+  findGoal(gid){
+    var gw=this.state.gweek, out=null;
+    Object.keys(gw).forEach(function(wk){ (gw[wk]||[]).forEach(function(g){ if(g.id===gid) out={goal:g,wk:wk}; }); });
+    return out;
+  }
+  setGoals(wk,fn){
+    this.setState(function(s){ var r=Object.assign({},s.gweek); r[wk]=fn(s.gweek[wk]||[]); return {gweek:r}; });
+  }
+  nextGoalColor(wk){
+    var used={}; this.goalsWk(wk).forEach(function(g){ used[g.colorIdx%4]=(used[g.colorIdx%4]||0)+1; });
+    var best=0,min=1e9;
+    for(var i=0;i<4;i++){ var c=used[i]||0; if(c<min){ min=c; best=i; } }
+    return best;
+  }
+  openGoalModal(g){
+    var self=this, wk=this.wk();
+    if(g&&g.id){
+      this.setState({modal:{kind:"goal"},draft:{id:g.id,wk:wk,title:g.title,colorIdx:g.colorIdx,
+        steps:g.steps.map(function(st){ return {id:st.id,name:st.name,hours:st.hours,done:st.done}; })}});
+    } else {
+      var steps=[1,2,3,4].map(function(i){ return {id:self.uid()+i,name:"",hours:1,done:false}; });
+      this.setState({modal:{kind:"goal"},draft:{id:null,wk:wk,title:"",colorIdx:this.nextGoalColor(wk),steps:steps}});
+    }
+  }
+  saveGoalDraft(){
+    var d=this.state.draft, self=this;
+    if(!d||!d.title||!d.title.trim()) return;
+    var wk=d.wk;
+    var steps=d.steps.map(function(st,i){ return {id:st.id||self.uid()+i,name:(st.name||"").trim()||("Step "+(i+1)),hours:Math.max(0.5,Number(st.hours)||1),done:!!st.done}; });
+    if(steps.length<1) return;
+    this.pushUndo();
+    if(d.id){
+      var keep={}; steps.forEach(function(st){ keep[st.id]=true; });
+      var old=this.findGoal(d.id);
+      if(old){ old.goal.steps.forEach(function(st){ if(!keep[st.id]) self.removeStepFromCal(st.id); }); }
+      this.setGoals(wk,function(gs){ return gs.map(function(g){ return g.id===d.id?Object.assign({},g,{title:d.title.trim(),colorIdx:d.colorIdx,steps:steps}):g; }); });
+      this.setState({modal:null,draft:null});
+      this.toast("Goal updated");
+    } else {
+      var goal={id:this.uid(),title:d.title.trim(),colorIdx:d.colorIdx,steps:steps};
+      this.setGoals(wk,function(gs){ return gs.concat([goal]); });
+      this.setState({modal:null,draft:null});
+      var placed=this.autoSpreadGoal(wk,goal);
+      this.toast("Goal created — "+placed+"/"+steps.length+" steps placed. Drag to refine.");
+    }
+  }
+  delGoal(gid){
+    var self=this, f=this.findGoal(gid); if(!f) return;
+    this.pushUndo();
+    f.goal.steps.forEach(function(st){ self.removeStepFromCal(st.id); });
+    this.setGoals(f.wk,function(gs){ return gs.filter(function(g){ return g.id!==gid; }); });
+    this.setState(function(s){ return {modal:null,draft:null,lensGoal:s.lensGoal===gid?null:s.lensGoal}; });
+    this.toast("Goal removed");
+  }
+  toggleStepDone(gid,sid){
+    var f=this.findGoal(gid); if(!f) return;
+    var allDoneBefore=f.goal.steps.every(function(st){ return st.done; });
+    this.setGoals(f.wk,function(gs){ return gs.map(function(g){
+      if(g.id!==gid) return g;
+      return Object.assign({},g,{steps:g.steps.map(function(st){ return st.id===sid?Object.assign({},st,{done:!st.done}):st; })});
+    }); });
+    var goal=f.goal, target=goal.steps.find(function(st){ return st.id===sid; });
+    if(target&&!target.done){
+      var remaining=goal.steps.filter(function(st){ return st.id!==sid&&!st.done; }).length;
+      if(remaining===0&&!allDoneBefore) this.toast("🏆 \""+goal.title+"\" complete!");
+    }
+  }
+  reorderStep(gid,from,to){
+    var f=this.findGoal(gid); if(!f) return;
+    this.setGoals(f.wk,function(gs){ return gs.map(function(g){
+      if(g.id!==gid) return g;
+      var st=g.steps.slice(); var m=st.splice(from,1)[0]; st.splice(to,0,m);
+      return Object.assign({},g,{steps:st});
+    }); });
+  }
+  removeStepFromCal(sid){
+    this.setState(function(s){
+      var r=Object.assign({},s.cal), changed=false;
+      Object.keys(r).forEach(function(wk){
+        var src=r[wk]||{}, hit=false;
+        Object.keys(src).forEach(function(k){ if(src[k]&&src[k].stepId===sid) hit=true; });
+        if(hit){ changed=true; var n={}; Object.keys(src).forEach(function(k){ if(!src[k]||src[k].stepId!==sid) n[k]=src[k]; }); r[wk]=n; }
+      });
+      return changed?{cal:r}:{};
+    });
+  }
+  placeStep(gid,sid,col,time){
+    var self=this, SL=this.SL;
+    var f=this.findGoal(gid); if(!f) return;
+    var step=f.goal.steps.find(function(st){ return st.id===sid; }); if(!step) return;
+    var am=this.apptMapForWeek(this.getMon(col.date));
+    var span=Math.max(1,Math.ceil((step.hours||1)*2));
+    var ti=SL.indexOf(time); if(ti<0) return;
+    if(am[col.di+"-"+SL[ti]]){ this.toast("Blocked by appointment"); return; }
+    this.pushUndo();
+    this.removeStepFromCal(sid);
+    this.setState(function(s){
+      var src=s.cal[col.wkKey]||{}, n=Object.assign({},src), overlap=false;
+      for(var i=0;i<span&&ti+i<SL.length;i++){
+        var ck=col.di+"-"+SL[ti+i];
+        if(am[ck]||(n[ck]&&n[ck].stepId!==sid)) overlap=true;
+        n[ck]={stepId:sid,goalId:gid,goalWk:f.wk,isStart:i===0,span:span};
+      }
+      var r=Object.assign({},s.cal); r[col.wkKey]=n; return {cal:r};
+    });
+  }
+  autoSpreadGoal(wk,goal){
+    var self=this, SL=this.SL, s=this.state, prefs=s.prefs;
+    var mon=this.parseKey(wk); var am=this.apptMapForWeek(this.getMon(mon));
+    var tz=prefs.timezone||"Pacific/Auckland";
+    var isCur = wk===this.getMon(new Date()).toISOString().slice(0,10);
+    var todayIdx = isCur?this.getTodayIdx(tz):0;
+    var wd=(prefs.workDays||[0,1,2,3,4,5]).filter(function(d){ return d>=todayIdx; });
+    if(wd.length===0) wd=[todayIdx];
+    var blocks=(prefs.blocks||[]).slice().sort(function(a,b){ return SL.indexOf(a.start)-SL.indexOf(b.start); });
+    var cur=Object.assign({},s.cal[wk]||{});
+    var pending=goal.steps.filter(function(st){ return !st.done; });
+    var placed=0;
+    // spread: aim steps at evenly-spaced days across the remaining week
+    pending.forEach(function(step,si){
+      var prefDay=wd[Math.min(wd.length-1,Math.floor(si*wd.length/Math.max(1,pending.length)))];
+      var order=wd.slice(wd.indexOf(prefDay)).concat(wd.slice(0,wd.indexOf(prefDay)));
+      var span=Math.max(1,Math.ceil((step.hours||1)*2));
+      var done=false;
+      order.forEach(function(di){
+        if(done) return;
+        blocks.forEach(function(block){
+          if(done) return;
+          var bsi=SL.indexOf(block.start), bei=SL.indexOf(block.end); if(bsi<0||bei<0) return;
+          for(var c=bsi;c<=bei-span;c++){
+            var ok=true;
+            for(var i=0;i<span;i++){ var ck=di+"-"+SL[c+i]; if(cur[ck]||am[ck]){ ok=false; break; } }
+            if(ok){ for(var j=0;j<span;j++) cur[di+"-"+SL[c+j]]={stepId:step.id,goalId:goal.id,goalWk:wk,isStart:j===0,span:span}; done=true; placed++; return; }
+          }
+        });
+      });
+    });
+    this.setState(function(st){ var r=Object.assign({},st.cal); r[wk]=cur; return {cal:r}; });
+    return placed;
+  }
+  toggleLens(gid){ this.setState(function(s){ return {lensGoal:s.lensGoal===gid?null:gid}; }); }
+
+  /* ---------- ribbon overlay (rubber-band links between sibling steps) ---------- */
+  scheduleRibbons(){
+    var self=this;
+    if(this._ribRaf) cancelAnimationFrame(this._ribRaf);
+    this._ribRaf=requestAnimationFrame(function(){ self.drawRibbons(); });
+  }
+  drawRibbons(){
+    var svg=document.getElementById("konqr-ribbons");
+    if(this.state.view!=="calendar"){ if(svg) svg.style.display="none"; return; }
+    if(!svg){
+      svg=document.createElementNS("http://www.w3.org/2000/svg","svg");
+      svg.id="konqr-ribbons";
+      svg.style.cssText="position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:8;";
+      document.body.appendChild(svg);
+    }
+    svg.style.display="block";
+    var groups={};
+    var els=document.querySelectorAll("[data-stepblock]");
+    for(var i=0;i<els.length;i++){
+      var el=els[i], parts=el.getAttribute("data-stepblock").split("|");
+      var gid=parts[0], idx=Number(parts[1]), color=parts[2];
+      if(!groups[gid]) groups[gid]={color:color,items:[]};
+      groups[gid].items.push({idx:idx,rect:el.getBoundingClientRect()});
+    }
+    var lens=this.state.lensGoal;
+    var paths="";
+    Object.keys(groups).forEach(function(gid){
+      var g=groups[gid];
+      g.items.sort(function(a,b){ return a.idx-b.idx; });
+      var op=lens?(lens===gid?0.85:0.06):0.45;
+      for(var i=0;i<g.items.length-1;i++){
+        var a=g.items[i].rect, b=g.items[i+1].rect;
+        var x1=a.left+a.width/2, y1=a.bottom-3, x2=b.left+b.width/2, y2=b.top+3;
+        if(y2<y1){ y1=a.top+a.height/2; y2=b.top+b.height/2; x1=(x2>x1)?a.right-3:a.left+3; x2=(x2>x1)?b.left+3:b.right-3; }
+        var dy=Math.max(26,Math.abs(y2-y1)*0.5);
+        paths+='<path d="M'+x1.toFixed(1)+' '+y1.toFixed(1)+' C'+x1.toFixed(1)+' '+(y1+dy).toFixed(1)+', '+x2.toFixed(1)+' '+(y2-dy).toFixed(1)+', '+x2.toFixed(1)+' '+y2.toFixed(1)+'" fill="none" stroke="'+g.color+'" stroke-width="2.5" stroke-linecap="round" opacity="'+op+'" stroke-dasharray="1 7"/>';
+        paths+='<circle cx="'+x1.toFixed(1)+'" cy="'+y1.toFixed(1)+'" r="3" fill="'+g.color+'" opacity="'+op+'"/>';
+        paths+='<circle cx="'+x2.toFixed(1)+'" cy="'+y2.toFixed(1)+'" r="3" fill="'+g.color+'" opacity="'+op+'"/>';
+      }
+    });
+    svg.innerHTML=paths;
+  }
+
+  /* ---------- due-date escalation ---------- */
+  dueInfo(t){
+    if(!t.due) return null;
+    var today=new Date(new Date().toLocaleDateString("en-CA",{timeZone:this.state.prefs.timezone||"Pacific/Auckland"}));
+    var due=this.parseKey(t.due);
+    var days=Math.round((due.getTime()-today.getTime())/86400000);
+    var base=(t.priority==null||t.priority==="")?4:Number(t.priority);
+    var esc = days<=1 ? 1 : (days<=3 ? Math.max(1,base-1) : base);
+    return {days:days, esc:esc, urgent:days<=1,
+      label: days<0?"OVERDUE":(days===0?"Due today":(days===1?"Due tomorrow":"Due "+due.toLocaleDateString("en-NZ",{day:"numeric",month:"short"})))};
+  }
+  effPriority(t){
+    var di=this.dueInfo(t);
+    if(di) return di.esc;
+    return (t.priority==null||t.priority==="")?4:Number(t.priority);
+  }
+  taskSort(list){
+    var self=this;
+    return list.slice().sort(function(a,b){
+      var da=self.dueInfo(a), db=self.dueInfo(b);
+      if(da&&!db) return -1;
+      if(db&&!da) return 1;
+      if(da&&db){ if(da.esc!==db.esc) return da.esc-db.esc; return da.days-db.days; }
+      var pa=(a.priority==null||a.priority==="")?9:Number(a.priority);
+      var pb=(b.priority==null||b.priority==="")?9:Number(b.priority);
+      return pa-pb;
+    });
   }
 
   /* ---------- actions ---------- */
   placeTask(tid,col,time){
     this.pushUndo();
-    var self=this, am=this.apptMap(), SL=this.SL;
+    var self=this, am=this.apptMapForWeek(this.getMon(col.date)), SL=this.SL;
     var task=this.state.tasks.find(function(t){ return t.id===tid; }); if(!task) return;
     var span=Math.max(1,Math.ceil((task.estimatedHours||1)*2));
     var ti=SL.indexOf(time); if(ti<0) return;
@@ -347,7 +597,7 @@ class Component extends DCLogic {
   saveTaskDraft(){
     var d=this.state.draft; if(!d||!d.name||!d.name.trim()) return;
     var hrs=Number(d.estimatedHours)||1;
-    var payload={name:d.name.trim(),description:d.description||"",groupId:d.groupId||"",priority:Number(d.priority),estimatedHours:hrs,recurring:d.recurring,parentId:d.parentId||null,status:d.status||"active"};
+    var payload={name:d.name.trim(),description:d.description||"",groupId:d.groupId||"",priority:(d.priority===""||d.priority==null)?null:Number(d.priority),estimatedHours:hrs,recurring:d.recurring,parentId:d.parentId||null,status:d.status||"active",due:d.due||null};
     if(d.id){ payload.id=d.id; payload.completed=d.completed; }
     if(hrs>this.MAX_HRS && !payload.parentId){
       var n=Math.ceil(hrs/this.MAX_HRS);
@@ -356,6 +606,7 @@ class Component extends DCLogic {
       var base=(payload.name||"").replace(/ \(\d+\/\d+\)$/,"");
       var parts=[];
       for(var i=0;i<n;i++) parts.push({name:base+" - Part "+(i+1),hours:i===n-1?last:each});
+      if(this.state.pendingPlace) this.setState({pendingPlace:null});
       this.setState({modal:{kind:"split"},draft:{parent:payload,parts:parts,total:hrs}});
       return;
     }
@@ -364,6 +615,15 @@ class Component extends DCLogic {
     var updated = (payload.id&&old) ? s.tasks.map(function(t){ return t.id===payload.id?Object.assign({},payload,{id:tid}):t; })
                                     : s.tasks.concat([Object.assign({},payload,{id:tid,completed:false})]);
     this.setState({tasks:updated,modal:null,draft:null});
+    var pend=this.state.pendingPlace;
+    if(pend){
+      this.setState({pendingPlace:null});
+      if(!payload.id){
+        var self2=this, pcol=pend.col, ptm=pend.time;
+        if(pcol&&pcol.date&&!(pcol.date instanceof Date)) pcol=Object.assign({},pcol,{date:new Date(pcol.date)});
+        setTimeout(function(){ self2.placeTask(tid,pcol,ptm); },0);
+      }
+    }
     var SL=this.SL, am=this.apptMap(), prefs=s.prefs;
     var recurChanged = old && old.recurring!==payload.recurring;
     var hoursChanged = old && old.estimatedHours!==payload.estimatedHours;
@@ -449,7 +709,9 @@ class Component extends DCLogic {
     var st=this.state.undoStack;
     if(st.length===0){ this.toast("Nothing to undo"); return; }
     var snap=st[st.length-1];
-    this.setState({undoStack:st.slice(0,st.length-1),tasks:snap.tasks});
+    var patch={undoStack:st.slice(0,st.length-1),tasks:snap.tasks};
+    if(snap.gweek) patch.gweek=snap.gweek;
+    this.setState(patch);
     this.setWCal(function(){ return snap.cal; });
     this.toast("Undone");
   }
@@ -466,8 +728,9 @@ class Component extends DCLogic {
     var wd=(prefs.workDays||[0,1,2,3,4,5]).filter(function(d){ return d>=todayIdx; });
     var maxC=Math.ceil((prefs.maxContinuousHours||2.5)*2);
     function isFree(di,si){ var ck=di+"-"+SL[si]; return !nc[ck]&&!am[ck]; }
+    var self=this;
     var recur=s.tasks.filter(function(t){ return !t.completed&&(t.status||"active")==="active"&&t.recurring&&t.recurring!=="none"&&!alreadyPlaced[t.id]; });
-    var oneOff=s.tasks.filter(function(t){ return !t.completed&&(t.status||"active")==="active"&&(!t.recurring||t.recurring==="none")&&!alreadyPlaced[t.id]; }).sort(function(a,b){ return a.priority-b.priority; });
+    var oneOff=this.taskSort(s.tasks.filter(function(t){ return !t.completed&&(t.status||"active")==="active"&&(!t.recurring||t.recurring==="none")&&!alreadyPlaced[t.id]; }));
     var placed0=Object.keys(alreadyPlaced).length, placedCount=placed0;
     recur.forEach(function(task){
       var dtp=[];
@@ -498,7 +761,7 @@ class Component extends DCLogic {
         while(cursor<ei && queue.length>0){
           if(!isFree(di,cursor)){ cursor++; continue; }
           var bi=-1;
-          for(var q=0;q<queue.length;q++){ if(block.priority!==null&&queue[q].priority>block.priority+1) continue; bi=q; break; }
+          for(var q=0;q<queue.length;q++){ if(block.priority!==null&&self.effPriority(queue[q])>block.priority+1) continue; bi=q; break; }
           if(bi<0) break;
           var task=queue[bi];
           var span=Math.min(Math.max(1,Math.ceil((task.estimatedHours||1)*2)),maxC,ei-cursor);
@@ -561,10 +824,20 @@ class Component extends DCLogic {
   patchDraft(patch){ this.setState(function(s){ return {draft:Object.assign({},s.draft,patch)}; }); }
   openTaskModal(t){
     var g=this.state.groups;
-    this.setState({modal:{kind:"task"},draft: t&&t.id ? Object.assign({},t) : {name:"",description:"",groupId:"",priority:3,estimatedHours:1,recurring:"none",status:"active",parentId:null}});
+    this.setState({modal:{kind:"task"},draft: t&&t.id ? Object.assign({},t) : {name:"",description:"",groupId:"",priority:"",estimatedHours:1,recurring:"none",status:"active",parentId:null,due:""}});
   }
   openGroupModal(g){ this.setState({modal:{kind:"group"},draft: g&&g.id?Object.assign({},g):{name:"",color:"#6366F1"}}); }
-  openApptModal(a){ this.setState({modal:{kind:"appt"},draft: a&&a.id?Object.assign({},a):{name:"",time:"09:00",duration:1,color:"#DC2626",notes:"",days:[1]}}); }
+  openSlotModal(col,time){
+    var d=new Date(col.date);
+    this.setState({modal:{kind:"slot"},draft:{col:{di:col.di,wkKey:col.wkKey,date:col.date},time:time,
+      label:this.DAYS[col.di]+" "+d.toLocaleDateString("en-NZ",{day:"numeric",month:"short"})+" \u00B7 "+time}});
+  }
+  openApptModal(a){
+    var draft;
+    if(a&&a.id){ draft=Object.assign({},a); draft.recurring=this.apptRec(a); if(!draft.date) draft.date=this.localKey(new Date(this.state.anchorMs)); }
+    else { draft={name:"",date:this.localKey(new Date()),recurring:"none",time:"09:00",duration:1,color:"#DC2626",notes:"",days:[]}; }
+    this.setState({modal:{kind:"appt"},draft:draft});
+  }
   closeModal(){ this.setState({modal:null,draft:null}); }
 
   saveGroupDraft(){
@@ -576,18 +849,23 @@ class Component extends DCLogic {
     });
   }
   saveApptDraft(){
-    var d=this.state.draft; if(!d.name||!d.name.trim()||!(d.days||[]).length) return;
+    var d=this.state.draft; if(!d.name||!d.name.trim()) return;
+    if(!d.date&&(d.recurring==="none"||d.recurring==="monthly")) return;
     var self=this;
     this.setState(function(s){
       var exists=d.id&&s.appts.find(function(a){ return a.id===d.id; });
       var norm=Object.assign({},d,{duration:Number(d.duration)});
+      if(norm.recurring==="weekly"&&(!norm.days||!norm.days.length)&&norm.date){ var ad=self.parseKey(norm.date); var dow=ad.getDay(); norm.days=[dow===0?6:dow-1]; }
+      if(norm.recurring!=="weekly") norm.days=[];
       return {appts: exists ? s.appts.map(function(a){ return a.id===d.id?norm:a; }) : s.appts.concat([Object.assign({},norm,{id:self.uid()})]), modal:null, draft:null};
     });
   }
 
   /* ---------- render values ---------- */
   renderVals(){
-    var self=this, s=this.state, SL=this.SL, gMap=this.gMap(), am=this.apptMap();
+    var self=this, s=this.state, SL=this.SL, gMap=this.gMap();
+    var amCache={};
+    function amFor(c){ if(!amCache[c.wkKey]) amCache[c.wkKey]=self.apptMapForWeek(self.getMon(c.date)); return amCache[c.wkKey]; }
     var accent=this.accent();
     var tz=s.prefs.timezone||"Pacific/Auckland";
     var viewStart=new Date(s.anchorMs);
@@ -640,35 +918,92 @@ class Component extends DCLogic {
       };
     });
 
-    /* weekly goals */
-    var wgRows=[0,1,2,3].map(function(gi){
-      var rows=s.wgoals[wk]||[]; var row=rows[gi]||{t:"",d:false};
-      var editing=s.editWG===gi;
-      return {
-        editing:editing, notEditing:!editing, mark:row.d?"\u2713":"", text:row.t||("Goal "+(gi+1)+"..."), draft:s.wgDraft,
-        checkStyle:{width:16,height:16,borderRadius:5,flexShrink:0,cursor:row.t?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"#fff",padding:0,
-          border:"1px solid "+(row.d?"#22C55E":row.t?accent:"rgba(255,255,255,.18)"),
-          background:row.d?self.glossFill("#22C55E"):"rgba(255,255,255,.04)"},
-        textStyle:{flex:1,minWidth:0,fontSize:11.5,padding:"4px 7px",borderRadius:7,cursor:"text",
-          color:row.t?(row.d?"rgba(231,233,236,.4)":"#E7E9EC"):"rgba(231,233,236,.28)",
-          textDecoration:row.d?"line-through":"none",fontWeight:row.t?600:400,minHeight:19,
-          background:row.t?"transparent":"rgba(255,255,255,.03)",
-          border:"1px dashed "+(row.t?"transparent":"rgba(255,255,255,.08)")},
-        onCheck:function(){ if(row.t) self.setWeekGoal(gi,{d:!row.d}); },
-        onEdit:function(){ self.setState({wgDraft:row.t,editWG:gi}); },
-        onDraft:function(e){ self.setState({wgDraft:e.target.value}); },
-        onCommit:function(){ self.setWeekGoal(gi,{t:s.wgDraft.trim()}); self.setState({editWG:-1}); },
-        onKey:function(e){ if(e.key==="Enter"){ self.setWeekGoal(gi,{t:e.target.value.trim()}); self.setState({editWG:-1}); } if(e.key==="Escape") self.setState({editWG:-1}); }
-      };
+    /* goal rail */
+    var wkGoals=this.goalsWk(wk);
+    var placedSteps={};
+    Object.keys(s.cal).forEach(function(wkK){
+      var c=s.cal[wkK]||{};
+      Object.keys(c).forEach(function(ck){
+        var e=c[ck];
+        if(e&&e.stepId&&e.isStart){
+          var di=parseInt(ck.split("-")[0],10), tm=ck.substring(ck.indexOf("-")+1);
+          placedSteps[e.stepId]={wk:wkK,di:di,time:tm,nextWeek:wkK!==wk&&wkK>wk};
+        }
+      });
     });
+    var goalRail={
+      onNew:function(){ self.openGoalModal(null); },
+      hasGoals:wkGoals.length>0,
+      empty:wkGoals.length===0,
+      goals:wkGoals.map(function(g){
+        var color=self.GOAL_COLORS[g.colorIdx%4];
+        var doneN=g.steps.filter(function(st){ return st.done; }).length;
+        var pct=g.steps.length?Math.round(doneN/g.steps.length*100):0;
+        var complete=doneN===g.steps.length&&g.steps.length>0;
+        var lensOn=s.lensGoal===g.id;
+        var dimmed=s.lensGoal&&!lensOn;
+        return {
+          title:g.title, pctLabel:doneN+"/"+g.steps.length, complete:complete,
+          cardStyle:{borderRadius:12,padding:"11px 12px",marginBottom:8,cursor:"pointer",
+            background:lensOn?"rgba(255,255,255,.09)":"rgba(255,255,255,.045)",
+            border:"1px solid "+(lensOn?color:"rgba(255,255,255,.09)"),
+            borderLeft:"4px solid "+color,
+            opacity:dimmed?0.45:1},
+          donutStyle:{width:30,height:30,borderRadius:"50%",flexShrink:0,position:"relative",
+            background:"conic-gradient("+color+" "+pct+"%, rgba(255,255,255,.10) 0)"},
+          donutHoleStyle:{position:"absolute",inset:4,borderRadius:"50%",background:"#101319",display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,fontWeight:700,color:complete?color:"rgba(231,233,236,.8)"},
+          donutText:complete?"\u2713":pct+"%",
+          titleStyle:{fontWeight:700,fontSize:12.5,color:complete?"rgba(231,233,236,.5)":"#F4F6F8",textDecoration:complete?"line-through":"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"},
+          lensHint:lensOn?"Focused \u2014 tap to clear":"",
+          lensHintStyle:{fontSize:8.5,fontWeight:700,letterSpacing:".08em",color:color},
+          onLens:function(){ self.toggleLens(g.id); },
+          onEdit:function(e){ e.stopPropagation(); self.openGoalModal(g); },
+          steps:g.steps.map(function(st,si){
+            var pl=placedSteps[st.id];
+            var plLabel=pl?(self.DAYS[pl.di].slice(0,3)+" "+pl.time+(pl.nextWeek?" (next wk)":"")):"unplaced";
+            return {
+              name:st.name, meta:st.hours+"h \u00b7 "+plLabel,
+              rowStyle:{display:"flex",alignItems:"center",gap:7,padding:"4px 2px",borderRadius:7,cursor:"grab",
+                opacity:st.done?0.5:1,
+                background:s.stepDrag&&s.stepDrag.gid===g.id&&s.stepDrag.over===si?"rgba(255,255,255,.08)":"transparent"},
+              nameStyle:{flex:1,minWidth:0,fontSize:11,fontWeight:600,color:"#E7E9EC",textDecoration:st.done?"line-through":"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"},
+              metaStyle:{fontSize:8.5,color:pl?"rgba(231,233,236,.45)":"rgba(245,158,11,.85)",fontWeight:600,flexShrink:0},
+              tickStyle:{width:15,height:15,borderRadius:5,flexShrink:0,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:st.done?"#0B0D11":"transparent",padding:0,
+                border:"1px solid "+(st.done?color:"rgba(255,255,255,.25)"),
+                background:st.done?color:"rgba(255,255,255,.04)"},
+              mark:st.done?"\u2713":"",
+              onTick:function(e){ e.stopPropagation(); self.toggleStepDone(g.id,st.id); },
+              onDragStart:function(e){ e.stopPropagation(); e.dataTransfer.setData("text/plain","step:"+g.id+":"+st.id); self.setState({stepDrag:{gid:g.id,from:si,over:null},dragId:"step:"+g.id+":"+st.id,dragOrigin:wk}); },
+              onDragOver:function(e){ e.preventDefault(); e.stopPropagation(); if(s.stepDrag&&s.stepDrag.gid===g.id&&s.stepDrag.over!==si) self.setState({stepDrag:Object.assign({},s.stepDrag,{over:si})}); },
+              onDrop:function(e){ e.preventDefault(); e.stopPropagation(); var sd=s.stepDrag; if(sd&&sd.gid===g.id&&sd.from!==si){ self.reorderStep(g.id,sd.from,si); } self.setState({stepDrag:null,dragId:null,dragOrigin:null}); },
+              onDragEnd:function(){ self.setState({stepDrag:null}); }
+            };
+          })
+        };
+      })
+    };
 
-    /* parking lot */
-    var plList=unsched.filter(function(t){ if(s.plFilter==="all") return true; if(s.plFilter==="none") return !t.groupId; return t.groupId===s.plFilter; });
+    /* parking lot (task pop-out panel) */
+    var plList=this.taskSort(unsched.filter(function(t){ if(s.plFilter==="all") return true; if(s.plFilter==="none") return !t.groupId; return t.groupId===s.plFilter; }));
     var unschedList=plList.map(function(t){
-      var pc=self.PC[t.priority]||self.PC[4], chip=self.solidChip(pc.solid,false);
+      var di=self.dueInfo(t);
+      var eff=self.effPriority(t);
+      var pc=self.PC[eff]||self.PC[4];
+      var g=gMap[t.groupId];
+      var noPri=(t.priority==null||t.priority==="")&&!di;
+      var bits=[(t.estimatedHours||1)+"h"];
+      if(!noPri) bits.push("P"+eff);
+      if(di) bits.push(di.label);
+      if(t.parentId) bits.push("sub");
+      if(g) bits.push(g.name);
       return {
-        name:t.name, meta:(t.estimatedHours||1)+"h \u00B7 P"+t.priority+(t.parentId?" \u00B7 sub":"")+(gMap[t.groupId]?" \u00B7 "+gMap[t.groupId].name:""),
-        style:Object.assign({padding:"7px 10px",marginBottom:5,borderRadius:8,cursor:"grab"},chip),
+        name:t.name, meta:bits.join(" \u00B7 "),
+        style:{padding:"7px 10px",marginBottom:5,borderRadius:8,cursor:"grab",
+          background:di&&di.urgent?"rgba(220,38,38,.16)":"rgba(255,255,255,.05)",
+          border:"1px solid "+(di&&di.urgent?"rgba(220,38,38,.55)":"rgba(255,255,255,.08)"),
+          borderLeft:"3px solid "+(g?g.color:"rgba(255,255,255,.18)"),
+          color:"#E7E9EC"},
+        metaStyle:{fontSize:9.5,marginTop:2,color:di&&di.urgent?"#FCA5A5":(noPri?"rgba(231,233,236,.4)":pc.solid),fontWeight:600},
         onDragStart:function(e){ e.dataTransfer.setData("text/plain",t.id); self.setState({dragId:t.id,dragOrigin:wk}); },
         onClick:function(){ if(!s.dragId) self.openTaskModal(t); else self.setState({dragId:null}); }
       };
@@ -687,7 +1022,7 @@ class Component extends DCLogic {
       return {
         day:self.DAYS[c.di], date:c.date.toLocaleDateString("en-NZ",{day:"numeric",month:"short"}),
         style:{padding:"7px 4px 9px",textAlign:"center",borderBottom:c.isToday?"2px solid "+accent:"1px solid rgba(255,255,255,.14)",position:"relative",
-          background:c.isToday?"linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,0))":"transparent",borderRadius:"8px 8px 0 0"}
+          background:c.isToday?"rgba(255,255,255,.06)":"transparent",borderRadius:"8px 8px 0 0"}
       };
     });
 
@@ -700,14 +1035,25 @@ class Component extends DCLogic {
       var inSlot=(nowH===slotH)&&(nowM>=slotM)&&(nowM<slotM+30);
       var nowPct=inSlot?((nowM-slotM)/30)*100:0;
       var cells=cols.map(function(c){
-        var colCal=s.cal[c.wkKey]||{}, ck=c.di+"-"+time, entry=colCal[ck], aE=am[ck];
-        var task=entry?s.tasks.find(function(t){ return t.id===entry.taskId; }):null;
+        var colCal=s.cal[c.wkKey]||{}, ck=c.di+"-"+time, entry=colCal[ck], aE=amFor(c)[ck];
+        var task=(entry&&entry.taskId)?s.tasks.find(function(t){ return t.id===entry.taskId; }):null;
+        var stepGoal=null, stepObj=null;
+        if(entry&&entry.stepId){
+          var gf=self.findGoal(entry.goalId);
+          if(gf){ stepGoal=gf.goal; stepObj=stepGoal.steps.find(function(x){ return x.id===entry.stepId; }); }
+        }
+        function routeDrop(tid){
+          if(!tid) return;
+          if(tid.slice(0,5)==="appt:"){ self.rescheduleAppt(tid.slice(5),c,time); }
+          else if(tid.slice(0,5)==="step:"){ var p=tid.split(":"); self.placeStep(p[1],p[2],c,time); self.setState({dragId:null,dragOrigin:null,stepDrag:null}); }
+          else self.handleDrop(tid,c,time);
+        }
         var cell={
           style:{borderTop:isH?"1px solid rgba(255,255,255,.11)":"1px solid rgba(255,255,255,.045)",borderLeft:"1px solid rgba(255,255,255,.045)",minHeight:34,padding:1,position:"relative",
             background: (aE&&!entry) ? "rgba(220,38,38,.10)" : (s.dragId?"rgba(109,90,240,.09)":"transparent")},
           onDragOver:function(e){ e.preventDefault(); },
-          onDrop:function(e){ e.preventDefault(); var tid=e.dataTransfer.getData("text/plain")||s.dragId; if(tid) self.handleDrop(tid,c,time); },
-          onClick:function(){ if(s.dragId) self.handleDrop(s.dragId,c,time); },
+          onDrop:function(e){ e.preventDefault(); var tid=e.dataTransfer.getData("text/plain")||s.dragId; routeDrop(tid); },
+          onClick:function(){ if(s.dragId){ routeDrop(s.dragId); } else if(!entry && !aE){ self.openSlotModal(c,time); } },
           meal:meal||null, appt:null, task:null,
           todayStyle:c.isToday?{position:"absolute",left:-1,top:-1,bottom:-1,width:2,background:entry?"rgba(255,255,255,.85)":accent,zIndex:6,pointerEvents:"none"}:null,
           nowStyle:inSlot?{position:"absolute",left:0,right:0,top:nowPct+"%",height:0,zIndex:7,pointerEvents:"none",borderTop:"2px solid "+(entry?"rgba(255,255,255,.9)":"#FF3D6E"),boxShadow:"0 0 8px rgba(255,61,110,.8)"}:null
@@ -715,17 +1061,41 @@ class Component extends DCLogic {
         if(aE&&aE.isStart&&!entry){
           var ac=aE.appt.color||"#DC2626";
           cell.appt={
+            onDragStart:function(e){ e.stopPropagation(); e.dataTransfer.setData("text/plain","appt:"+aE.appt.id); },
             label:"\u25CE  "+aE.appt.name,
-            style:Object.assign({position:"absolute",top:1,left:1,right:1,height:"calc("+(aE.span*100)+"% - 2px)",borderRadius:7,padding:"3px 7px",fontSize:10.5,fontWeight:700,zIndex:3,cursor:"pointer",overflow:"hidden"},self.solidChip(ac,false)),
-            onClick:function(e){ e.stopPropagation(); self.openApptModal(aE.appt); }
+            style:Object.assign({position:"absolute",top:1,left:1,right:1,height:"calc("+(aE.span*100)+"% - 2px)",borderRadius:7,padding:"3px 7px",fontSize:10.5,fontWeight:700,zIndex:3,cursor:"pointer",overflow:"hidden",display:"flex",flexDirection:"column"},self.solidChip(ac,false),s.lensGoal?{opacity:0.22}:null),
+            onClick:function(e){ e.stopPropagation(); if(self.isResizing()) return; self.openApptModal(aE.appt); },
+            onResize:function(e){
+              e.stopPropagation(); e.preventDefault();
+              self.resizeGuard.active=true;
+              var startY=e.clientY, origSpan=aE.span, aid=aE.appt.id;
+              var onMove=function(ev){
+                var diff=Math.round((ev.clientY-startY)/34);
+                var newSpan=Math.max(1,Math.min(origSpan+diff,16));
+                var newDur=Math.round(newSpan*5)/10;
+                self.setState(function(st){ return {appts:st.appts.map(function(a){ return a.id===aid?Object.assign({},a,{duration:newDur}):a; })}; });
+              };
+              var onUp=function(){ self.resizeGuard.active=false; self.resizeGuard.until=Date.now()+400; document.removeEventListener("mousemove",onMove); document.removeEventListener("mouseup",onUp); };
+              document.addEventListener("mousemove",onMove); document.addEventListener("mouseup",onUp);
+            }
           };
         }
         if(task&&entry.isStart){
-          var pc=self.PC[task.priority]||self.PC[4];
-          var chip=self.solidChip(pc.solid,task.completed);
+          var tdi=self.dueInfo(task);
+          var teff=self.effPriority(task);
+          var tpc=self.PC[teff]||self.PC[4];
+          var tg=gMap[task.groupId];
+          var urgent=tdi&&tdi.urgent&&!task.completed;
+          var chip={
+            background:urgent?"rgba(220,38,38,.30)":"rgba(255,255,255,.085)",
+            border:"1px solid "+(urgent?"rgba(220,38,38,.7)":"rgba(255,255,255,.14)"),
+            borderLeft:"3px solid "+(tg?tg.color:tpc.solid),
+            color:task.completed?"rgba(231,233,236,.45)":"#E7E9EC",
+            opacity:s.lensGoal?0.22:(task.completed?0.55:1)
+          };
           cell.task={
             name:(entry.recurring?"\u21BB ":"")+task.name,
-            sub:task.estimatedHours+"h"+(task.parentId?" \u00B7 sub":""),
+            sub:task.estimatedHours+"h \u00B7 P"+teff+(tdi?" \u00B7 "+tdi.label:"")+(task.parentId?" \u00B7 sub":""),
             showSub:entry.span>=3,
             checkStroke:task.completed?"#14181F":"rgba(255,255,255,.95)",
             nameStyle: entry.span>=2
@@ -735,7 +1105,7 @@ class Component extends DCLogic {
             onEnter:function(){ self.setState({hoverTask:task.id+"@"+c.wkKey+"-"+ck}); },
             onLeave:function(){ self.setState({hoverTask:null}); },
             style:Object.assign({position:"absolute",top:1,left:1,right:1,height:"calc("+(entry.span*100)+"% - 2px)",borderRadius:7,padding:"3px 5px",fontSize:10.5,cursor:"grab",zIndex:2,lineHeight:1.28,display:"flex",flexDirection:"column",overflow:"hidden",textDecoration:task.completed?"line-through":"none"},chip),
-            doneStyle:{width:20,height:20,borderRadius:6,border:"1px solid rgba(255,255,255,.6)",background:task.completed?"linear-gradient(180deg,#FFFFFF,rgba(255,255,255,.78))":"linear-gradient(180deg,rgba(255,255,255,.3),rgba(255,255,255,.10))",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0,flexShrink:0,boxShadow:"inset 0 1px 0 rgba(255,255,255,.5)"},
+            doneStyle:{width:20,height:20,borderRadius:6,border:"1px solid rgba(255,255,255,.45)",background:task.completed?"#FFFFFF":"rgba(255,255,255,.14)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0,flexShrink:0},
             onDragStart:function(e){ e.dataTransfer.setData("text/plain",task.id); self.setState({dragId:task.id,dragOrigin:c.wkKey}); },
             onClick:function(e){ e.stopPropagation(); if(self.isResizing()) return; self.openTaskModal(task); },
             onDup:function(e){ e.stopPropagation(); self.duplicateTask(task.id); },
@@ -762,6 +1132,63 @@ class Component extends DCLogic {
             }
           };
         }
+        if(stepObj&&stepGoal&&entry.isStart){
+          var gcol=self.GOAL_COLORS[stepGoal.colorIdx%4];
+          var stepIdx=stepGoal.steps.indexOf(stepObj);
+          var dimStep=s.lensGoal&&s.lensGoal!==stepGoal.id;
+          cell.step={
+            name:stepObj.name,
+            goalName:stepGoal.title,
+            sub:(stepIdx+1)+"/"+stepGoal.steps.length+" · "+stepObj.hours+"h",
+            showSub:entry.span>=2,
+            domAttr:stepGoal.id+"|"+stepIdx+"|"+gcol,
+            mark:stepObj.done?"✓":"",
+            style:{position:"absolute",top:1,left:1,right:1,height:"calc("+(entry.span*100)+"% - 2px)",borderRadius:8,padding:"4px 6px",fontSize:10.5,cursor:"grab",zIndex:2,lineHeight:1.25,display:"flex",flexDirection:"column",overflow:"hidden",
+              background:stepObj.done?"rgba(255,255,255,.05)":gcol,
+              border:"1.5px solid "+gcol,
+              color:stepObj.done?"rgba(231,233,236,.5)":"#0B0D11",
+              textDecoration:stepObj.done?"line-through":"none",
+              fontWeight:700,
+              opacity:dimStep?0.18:1,
+              boxShadow:s.lensGoal===stepGoal.id?"0 0 0 2px "+gcol+", 0 6px 18px -6px "+gcol:"none"},
+            goalTagStyle:{fontSize:7.5,fontWeight:800,letterSpacing:".07em",textTransform:"uppercase",opacity:.75,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"},
+            nameStyle: entry.span>=2
+              ? {display:"-webkit-box",WebkitBoxOrient:"vertical",WebkitLineClamp:2,overflow:"hidden",fontSize:10.5,lineHeight:1.25,paddingRight:24,maxHeight:26}
+              : {display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontSize:10.5,lineHeight:1.25,paddingRight:24},
+            subStyle:{fontSize:8.5,opacity:.75},
+            tickStyle:{position:"absolute",top:2,right:3,width:19,height:19,borderRadius:6,zIndex:2,
+              border:"1.5px solid "+(stepObj.done?gcol:"rgba(0,0,0,.4)"),
+              background:stepObj.done?"#101319":"rgba(255,255,255,.55)",
+              color:stepObj.done?gcol:"#0B0D11",
+              cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0,fontSize:10,fontWeight:800},
+            onDragStart:function(e){ e.dataTransfer.setData("text/plain","step:"+stepGoal.id+":"+stepObj.id); self.setState({dragId:"step:"+stepGoal.id+":"+stepObj.id,dragOrigin:c.wkKey}); },
+            onClick:function(e){ e.stopPropagation(); if(self.isResizing()) return; self.openGoalModal(stepGoal); },
+            onTick:function(e){ e.stopPropagation(); self.toggleStepDone(stepGoal.id,stepObj.id); },
+            onResize:function(e){
+              e.stopPropagation(); e.preventDefault();
+              self.resizeGuard.active=true;
+              var startY=e.clientY, origSpan=entry.span, sid=stepObj.id, gid2=stepGoal.id, gwk2=entry.goalWk, dayI=c.di, wkC=c.wkKey, timeStr=time;
+              var onMove=function(ev){
+                var diff=Math.round((ev.clientY-startY)/34);
+                var newSpan=Math.max(1,Math.min(origSpan+diff,16));
+                var newHrs=Math.round(newSpan*5)/10;
+                self.setGoals(gwk2,function(gs){ return gs.map(function(g){
+                  if(g.id!==gid2) return g;
+                  return Object.assign({},g,{steps:g.steps.map(function(x){ return x.id===sid?Object.assign({},x,{hours:newHrs}):x; })});
+                }); });
+                var ti2=SL.indexOf(timeStr);
+                self.setState(function(st){
+                  var src=st.cal[wkC]||{}, n={};
+                  Object.keys(src).forEach(function(k){ if(!src[k]||src[k].stepId!==sid) n[k]=src[k]; });
+                  for(var i=0;i<newSpan&&ti2+i<SL.length;i++) n[dayI+"-"+SL[ti2+i]]={stepId:sid,goalId:gid2,goalWk:gwk2,isStart:i===0,span:newSpan};
+                  var r=Object.assign({},st.cal); r[wkC]=n; return {cal:r};
+                });
+              };
+              var onUp=function(){ self.resizeGuard.active=false; self.resizeGuard.until=Date.now()+400; document.removeEventListener("mousemove",onMove); document.removeEventListener("mouseup",onUp); };
+              document.addEventListener("mousemove",onMove); document.addEventListener("mouseup",onUp);
+            }
+          };
+        }
         return cell;
       });
       return {
@@ -773,10 +1200,22 @@ class Component extends DCLogic {
 
     /* task row builder */
     function taskRow(t,opts){
-      var pc=self.PC[t.priority]||self.PC[4], chip=self.solidChip(pc.solid,t.completed);
+      var di=self.dueInfo(t);
+      var eff=self.effPriority(t);
+      var pc=self.PC[eff]||self.PC[4];
       var g=gMap[t.groupId];
+      var noPri=(t.priority==null||t.priority==="");
+      var urgent=di&&di.urgent&&!t.completed;
+      var chip={
+        background:urgent?"rgba(220,38,38,.22)":"rgba(255,255,255,.05)",
+        border:"1px solid "+(urgent?"rgba(220,38,38,.6)":"rgba(255,255,255,.09)"),
+        borderLeft:"4px solid "+(g?g.color:"rgba(255,255,255,.18)"),
+        color:"#E7E9EC"
+      };
       var badges=[];
-      badges.push("P"+t.priority);
+      if(di) badges.push(di.label+(noPri?"":" (P"+eff+")"));
+      else if(!noPri) badges.push("P"+t.priority);
+      else badges.push("no priority");
       badges.push((t.estimatedHours||1)+"h");
       if(g) badges.push(g.name);
       if(t.parentId) badges.push("sub-task");
@@ -784,9 +1223,10 @@ class Component extends DCLogic {
       if(t.status&&t.status!=="active"){ var so=self.STATUS_OPTIONS.find(function(x){ return x.value===t.status; }); if(so) badges.push(so.icon+" "+so.label); }
       return {
         name:t.name, meta:badges.join("  \u00B7  "),
+        metaColor:urgent?"#FCA5A5":(noPri&&!di?"rgba(255,255,255,.45)":pc.solid),
         nameStyle:{fontWeight:600,fontSize:13.5,textDecoration:t.completed?"line-through":"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"},
-        style:Object.assign({display:"flex",alignItems:"center",gap:11,padding:"10px 13px",borderRadius:10,opacity:t.completed?0.65:1,cursor:(opts&&opts.draggable)?"grab":"default"},chip),
-        checkStyle:{width:19,height:19,borderRadius:6,border:"1px solid rgba(255,255,255,.6)",background:t.completed?"rgba(255,255,255,.85)":"rgba(255,255,255,.14)",color:t.completed?"#1a1a1a":"#fff",cursor:"pointer",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0},
+        style:Object.assign({display:"flex",alignItems:"center",gap:11,padding:"10px 13px",borderRadius:10,opacity:t.completed?0.55:1,cursor:(opts&&opts.draggable)?"grab":"default"},chip),
+        checkStyle:{width:19,height:19,borderRadius:6,border:"1px solid rgba(255,255,255,.45)",background:t.completed?"rgba(255,255,255,.85)":"rgba(255,255,255,.10)",color:t.completed?"#1a1a1a":"#fff",cursor:"pointer",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0},
         mark:t.completed?"\u2713":"",
         onToggle:function(){ self.toggleDone(t.id); },
         onEdit:function(){ self.openTaskModal(t); },
@@ -799,8 +1239,8 @@ class Component extends DCLogic {
     var mv={
       editing:s.missionEdit, notEditing:!s.missionEdit, draft:s.missionDraft, btnLabel:s.missionEdit?"Save":"Edit",
       heroStyle:{borderRadius:18,padding:26,marginBottom:16,color:"#fff",
-        background:"linear-gradient(150deg,rgba(255,255,255,.20),rgba(255,255,255,.04) 42%,rgba(0,0,0,.18)), linear-gradient(135deg,"+accent+",#0E9F94)",
-        border:"1px solid rgba(255,255,255,.18)",boxShadow:"inset 0 1px 0 rgba(255,255,255,.4),0 30px 60px -34px rgba(0,0,0,1)"},
+        background:accent,
+        border:"1px solid rgba(255,255,255,.18)"},
       onToggle:function(){
         if(s.missionEdit){ self.setState({mission:s.missionDraft,goals:s.goalDrafts.filter(function(g){ return g.trim(); }),missionEdit:false}); }
         else self.setState({missionEdit:true,missionDraft:s.mission,goalDrafts:s.goals.slice()});
@@ -833,7 +1273,7 @@ class Component extends DCLogic {
       : s.taskFilter==="completed" ? s.tasks.filter(function(t){ return t.completed; })
       : s.tasks.filter(function(t){ var st=t.status||"active"; return !t.completed&&(st==="blocked"||st==="deferred"||st==="reminder"); });
     if(s.groupFilter!=="all") tlist=tlist.filter(function(t){ return s.groupFilter==="none"?!t.groupId:t.groupId===s.groupFilter; });
-    tlist=tlist.slice().sort(function(a,b){ return a.priority-b.priority; });
+    tlist=this.taskSort(tlist);
     var groupOpts=[{value:"all",label:"All groups"},{value:"none",label:"No group"}].concat(s.groups.map(function(g){ return {value:g.id,label:g.name}; }));
     var tv={
       filters:["all","active","parked","completed"].map(function(f){
@@ -848,7 +1288,7 @@ class Component extends DCLogic {
     /* priority view */
     var pv={
       quads:[1,2,3,4].map(function(pr){
-        var pc=self.PC[pr], pts=s.tasks.filter(function(t){ return t.priority===pr; });
+        var pc=self.PC[pr], pts=s.tasks.filter(function(t){ return self.effPriority(t)===pr; });
         var dn=pts.filter(function(t){ return t.completed; }).length;
         return {
           title:"P"+pr+" \u00B7 "+self.PL[pr], count:pts.length-dn,
@@ -935,9 +1375,14 @@ class Component extends DCLogic {
         var so=this.STATUS_OPTIONS.find(function(x){ return x.value===(d.status||"active"); });
         modal={
           title:d.id?"Edit Task":"New Task", isTask:true, d:d,
+          priVal:(d.priority==null||d.priority==="")?"":String(d.priority),
           saveLabel:d.id?"Update":"Create", canDelete:!!d.id,
           groupOpts:[{value:"",label:"No group"}].concat(s.groups.map(function(g){ return {value:g.id,label:g.name}; })),
-          priOpts:[1,2,3,4].map(function(x){ return {value:String(x),label:"P"+x+" \u00B7 "+self.PL[x]}; }),
+          priOpts:[{value:"",label:"No priority \u00B7 filler"}].concat([1,2,3,4].map(function(x){ return {value:String(x),label:"P"+x+" \u00B7 "+self.PL[x]}; })),
+          dueVal:d.due||"",
+          dueNote:(function(){ var di=d.due?self.dueInfo({due:d.due,priority:d.priority}):null; return di?(di.label+" \u2014 treated as P"+di.esc):null; })(),
+          dueNoteStyle:{fontSize:11,marginTop:5,color:(d.due&&self.dueInfo({due:d.due,priority:d.priority}).urgent)?"#FCA5A5":"rgba(231,233,236,.55)"},
+          onDue:function(e){ self.patchDraft({due:e.target.value}); },
           recOpts:this.RO.map(function(r){ return {value:r.value,label:r.label}; }),
           statusBtns:this.STATUS_OPTIONS.map(function(x){
             var on=(d.status||"active")===x.value;
@@ -951,7 +1396,7 @@ class Component extends DCLogic {
           onName:function(e){ self.patchDraft({name:e.target.value}); },
           onDesc:function(e){ self.patchDraft({description:e.target.value}); },
           onGroup:function(e){ self.patchDraft({groupId:e.target.value}); },
-          onPriority:function(e){ self.patchDraft({priority:Number(e.target.value)}); },
+          onPriority:function(e){ var v=e.target.value; self.patchDraft({priority:v===""?"":Number(v)}); },
           onHours:function(e){ self.patchDraft({estimatedHours:e.target.value}); },
           onRecurring:function(e){ self.patchDraft({recurring:e.target.value}); },
           onSave:function(){ self.saveTaskDraft(); },
@@ -969,11 +1414,23 @@ class Component extends DCLogic {
           onSave:function(){ self.saveGroupDraft(); },
           onDelete:function(){ var id=d.id; self.setState(function(st){ return {groups:st.groups.filter(function(g){ return g.id!==id; }),modal:null,draft:null}; }); }
         };
+      } else if(kind==="slot"){
+        modal={
+          title:"Add at "+d.label, isSlot:true,
+          onSlotTask:function(){ var col=d.col, tm=d.time; self.setState({pendingPlace:{col:col,time:tm},modal:{kind:"task"},draft:{name:"",description:"",groupId:"",priority:"",estimatedHours:1,recurring:"none",status:"active",parentId:null,due:""}}); },
+          onSlotAppt:function(){ var col=d.col, tm=d.time;
+            self.setState({modal:{kind:"appt"},draft:{name:"",date:self.localKey(col.date),recurring:"none",time:tm,duration:1,color:"#DC2626",notes:"",days:[]}});
+          }
+        };
       } else if(kind==="appt"){
         var ACL=["#DC2626","#F97316","#2563EB","#10B981","#8B5CF6","#EC4899"];
         modal={
           title:d.id?"Edit Appointment":"New Appointment", isAppt:true, d:d, saveLabel:d.id?"Update":"Create", canDelete:!!d.id,
           slotOpts:slotOpts,
+          recOpts:[{value:"none",label:"One-off"},{value:"daily",label:"Daily"},{value:"weekdays",label:"Weekdays"},{value:"weekly",label:"Weekly"},{value:"monthly",label:"Monthly"}],
+          onDate:function(e){ self.patchDraft({date:e.target.value}); },
+          onRecurring:function(e){ self.patchDraft({recurring:e.target.value}); },
+          showDays:d.recurring==="weekly",
           dayBtns:this.DAYS.map(function(dn,i){
             var on=(d.days||[]).indexOf(i)>=0;
             return {label:dn.slice(0,3),style:self.glassBtn(on),
@@ -989,6 +1446,31 @@ class Component extends DCLogic {
           onNotes:function(e){ self.patchDraft({notes:e.target.value}); },
           onSave:function(){ self.saveApptDraft(); },
           onDelete:function(){ var id=d.id; self.setState(function(st){ return {appts:st.appts.filter(function(a){ return a.id!==id; }),modal:null,draft:null}; }); }
+        };
+      } else if(kind==="goal"){
+        var gcolNow=this.GOAL_COLORS[d.colorIdx%4];
+        modal={
+          title:d.id?"Edit Goal":"New Weekly Goal", isGoal:true, d:d,
+          saveLabel:d.id?"Update":"Create Goal", canDelete:!!d.id,
+          intro:d.id?null:"What must move forward this week? I'll rough out the steps across your remaining days — then drag and stretch to refine.",
+          swatches:this.GOAL_COLORS.map(function(cl,i){
+            return {style:{width:32,height:32,borderRadius:9,cursor:"pointer",background:cl,
+              border:d.colorIdx===i?"2px solid #fff":"1px solid rgba(255,255,255,.14)"},
+              onClick:function(){ self.patchDraft({colorIdx:i}); }};
+          }),
+          onTitle:function(e){ self.patchDraft({title:e.target.value}); },
+          steps:d.steps.map(function(st,i){
+            return {name:st.name, hours:st.hours, canRemove:d.steps.length>1,
+              ph:"Step "+(i+1)+" — what specifically?",
+              numStyle:{width:20,height:20,borderRadius:6,flexShrink:0,background:gcolNow,color:"#0B0D11",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"},
+              num:String(i+1),
+              onName:function(e){ var v=e.target.value; self.setState(function(stt){ var ps=stt.draft.steps.slice(); ps[i]=Object.assign({},ps[i],{name:v}); return {draft:Object.assign({},stt.draft,{steps:ps})}; }); },
+              onHours:function(e){ var v=Number(e.target.value); self.setState(function(stt){ var ps=stt.draft.steps.slice(); ps[i]=Object.assign({},ps[i],{hours:v}); return {draft:Object.assign({},stt.draft,{steps:ps})}; }); },
+              onRemove:function(){ self.setState(function(stt){ var ps=stt.draft.steps.filter(function(_,j){ return j!==i; }); return {draft:Object.assign({},stt.draft,{steps:ps})}; }); }};
+          }),
+          onAddStep:function(){ self.setState(function(stt){ var ps=stt.draft.steps.concat([{id:self.uid(),name:"",hours:1,done:false}]); return {draft:Object.assign({},stt.draft,{steps:ps})}; }); },
+          onSave:function(){ self.saveGoalDraft(); },
+          onDelete:function(){ self.delGoal(d.id); }
         };
       } else if(kind==="split"){
         var total=(d.parts||[]).reduce(function(a,p){ return a+(Number(p.hours)||0); },0);
@@ -1053,6 +1535,8 @@ class Component extends DCLogic {
       onAuto:function(){ self.autoSchedule(); },
       onNewTask:function(){ self.openTaskModal(null); },
       onNewAppt:function(){ self.openApptModal(null); },
+      onNewGoal:function(){ self.openGoalModal(null); },
+      goalBtnStyle:{padding:"7px 14px",borderRadius:9,border:"none",background:this.GOAL_COLORS[0],color:"#0B0D11",fontSize:11.5,fontWeight:800,cursor:"pointer"},
       showRotateHint: s.isMob && s.isPortrait,
       calRowStyle:{display:"flex",gap:14,alignItems:"flex-start",paddingBottom:s.isMob?96:0},
       showSideCol: !s.isMob || s.drawerOpen,
@@ -1060,10 +1544,10 @@ class Component extends DCLogic {
       onToggleDrawer:function(){ self.setState({drawerOpen:!s.drawerOpen}); },
       drawerFabStyle:{width:52,height:52,borderRadius:16,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,
         border:"1px solid rgba(255,255,255,.2)",color:"#F2F4F7",
-        background:s.drawerOpen?self.glossFill(accent):"linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.05))",
-        boxShadow:"inset 0 1px 0 rgba(255,255,255,.35),0 14px 28px -12px rgba(0,0,0,1)"},
-      addFabStyle:{width:60,height:60,borderRadius:19,border:"1px solid "+accent,background:self.glossFill(accent),color:"#fff",fontSize:26,fontWeight:400,cursor:"pointer",
-        boxShadow:"inset 0 1px 0 rgba(255,255,255,.45),0 16px 32px -12px rgba(0,0,0,1)"},
+        background:s.drawerOpen?accent:"rgba(255,255,255,.10)",
+        boxShadow:"0 14px 28px -12px rgba(0,0,0,1)"},
+      addFabStyle:{width:60,height:60,borderRadius:19,border:"none",background:accent,color:"#fff",fontSize:26,fontWeight:400,cursor:"pointer",
+        boxShadow:"0 16px 32px -12px rgba(0,0,0,1)"},
       sideColStyle: s.isMob
         ? {position:"fixed",left:0,right:0,bottom:70,zIndex:125,maxHeight:"62vh",overflowY:"auto",padding:"12px 12px 16px",
            display:"flex",flexDirection:"column",gap:10,
@@ -1071,9 +1555,39 @@ class Component extends DCLogic {
            borderTop:"1px solid rgba(255,255,255,.12)",borderRadius:"18px 18px 0 0",
            boxShadow:"0 -24px 50px -20px rgba(0,0,0,1)"}
         : {width:210,flexShrink:0,display:"flex",flexDirection:"column",gap:10},
-      wgRows:wgRows,
-      parkingPanelStyle:{width:"100%",background:"rgba(255,255,255,.045)",border:"1px solid rgba(255,255,255,.09)",backdropFilter:"blur(20px) saturate(150%)",
-        borderRadius:14,padding:13,maxHeight:s.isMob?200:"calc(100vh - 340px)",overflowY:"auto",boxShadow:"inset 0 1px 0 rgba(255,255,255,.07)"},
+      goalRail:goalRail,
+      goalRailPanelStyle:{width:"100%",background:"rgba(255,255,255,.045)",border:"1px solid rgba(255,255,255,.09)",backdropFilter:"blur(20px) saturate(150%)",
+        borderRadius:14,padding:13,maxHeight:s.isMob?"46vh":"calc(100vh - 180px)",overflowY:"auto"},
+      taskPanelOpen:s.taskPanel,
+      onToggleTaskPanel:function(){ self.setState({taskPanel:!s.taskPanel}); },
+      taskBtnLabel:"Tasks ("+unsched.length+")",
+      taskPanelDragOver:function(e){ e.preventDefault(); },
+      taskPanelDrop:function(e){
+        e.preventDefault();
+        var tid=e.dataTransfer.getData("text/plain")||s.dragId;
+        if(!tid||tid.slice(0,5)==="appt:") return;
+        if(tid.slice(0,5)==="step:"){ var p=tid.split(":"); self.removeStepFromCal(p[2]); self.toast("Step unplaced"); }
+        else {
+          self.setState(function(st){
+            var r=Object.assign({},st.cal);
+            Object.keys(r).forEach(function(wkK){
+              var src=r[wkK]||{}, hit=false;
+              Object.keys(src).forEach(function(k){ if(src[k]&&src[k].taskId===tid) hit=true; });
+              if(hit){ var n={}; Object.keys(src).forEach(function(k){ if(!src[k]||src[k].taskId!==tid) n[k]=src[k]; }); r[wkK]=n; }
+            });
+            return {cal:r};
+          });
+          self.toast("Task back in the parking lot");
+        }
+        self.setState({dragId:null,dragOrigin:null,stepDrag:null});
+      },
+      taskBtnStyle:{padding:"7px 13px",borderRadius:9,border:"1px solid "+(s.taskPanel?"rgba(255,255,255,.35)":"rgba(255,255,255,.10)"),background:s.taskPanel?"rgba(255,255,255,.14)":"rgba(255,255,255,.04)",color:"#E7E9EC",fontSize:11.5,fontWeight:600,cursor:"pointer"},
+      taskPanelStyle:s.isMob
+        ? {position:"fixed",left:0,right:0,bottom:70,zIndex:126,maxHeight:"62vh",overflowY:"auto",padding:14,
+           background:"rgba(14,17,23,.97)",borderTop:"1px solid rgba(255,255,255,.14)",borderRadius:"18px 18px 0 0"}
+        : {position:"fixed",right:16,top:74,bottom:16,width:270,zIndex:126,overflowY:"auto",padding:14,
+           background:"rgba(14,17,23,.97)",border:"1px solid rgba(255,255,255,.14)",borderRadius:16,boxShadow:"0 30px 70px -30px rgba(0,0,0,1)"},
+      parkingPanelStyle:{width:"100%"},
       parkingTitle:"PARKING LOT ("+unsched.length+")",
       parkedTitle:"PARKED ("+parked.length+")",
       showPlFilter:s.groups.length>0&&unsched.length>6,
