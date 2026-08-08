@@ -61,9 +61,11 @@
             <button sc-camel-on-click="{{ onRoll }}" style="padding:7px 13px;border-radius:9px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);color:#E7E9EC;font-size:11.5px;cursor:pointer">Roll</button>
             <div style="margin-left:auto;display:flex;align-items:center;gap:7px">
               <h2 style="{{ weekLabelStyle }}">{{ weekLabel }}</h2>
-              <button sc-camel-on-click="{{ onPrev }}" style="width:30px;height:30px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#E7E9EC;font-size:14px;cursor:pointer">‹</button>
+              <button sc-camel-on-click="{{ onPrev }}" title="Back one week" style="{{ weekBtnStyle }}">‹‹</button>
+              <button sc-camel-on-click="{{ onPrevDay }}" title="Back one day" style="{{ dayBtnStyle }}">‹</button>
               <button sc-camel-on-click="{{ onToday }}" style="{{ primaryBtnStyle }}">Current Week</button>
-              <button sc-camel-on-click="{{ onNext }}" style="width:30px;height:30px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#E7E9EC;font-size:14px;cursor:pointer">›</button>
+              <button sc-camel-on-click="{{ onNextDay }}" title="Forward one day" style="{{ dayBtnStyle }}">›</button>
+              <button sc-camel-on-click="{{ onNext }}" title="Forward one week" style="{{ weekBtnStyle }}">››</button>
             </div>
           </div>
 
