@@ -68,7 +68,7 @@ class Component extends DCLogic {
   state = {
     view:"calendar", tasks:this.ST, groups:this.SG, goals:this.SGo, mission:this.SEED_M,
     cal:{}, appts:this.SA, prefs:this.SPr, wgoals:{}, gweek:{}, loaded:false,
-    lensGoal:null, taskPanel:false, stepDrag:null,
+    lensGoal:null, taskPanel:false, stepDrag:null, dropHint:null,
     anchorMs:this.getMon(new Date()).getTime(), dragId:null, dragOrigin:null,
     plFilter:"all", editWG:-1, wgDraft:"", nowTick:Date.now(), mobDay:0, sideOpen:false,
     isMob:false, isPortrait:false, navHover:null, drawerOpen:false, hoverTask:null,
@@ -108,23 +108,37 @@ class Component extends DCLogic {
     var self=this; this._fileDirty=true;
     if(this.state.fileStatus!=="dirty"&&this.state.fileStatus!=="blocked") this.setState({fileStatus:"dirty"});
     clearTimeout(this._ft);
-    this._ft=setTimeout(function(){ self.writeDataFile(); },900);
+    this._ft=setTimeout(function(){ self.writeDataFile(); },1500);
   }
   async writeDataFile(){
     if(!this._fileHandle) return;
+    if(this._fileWriting){ this._fileDirty=true; return; }
+    var self=this;
+    this._fileWriting=true;
+    var wd=null;
+    function doWrite(){
+      return self._fileHandle.createWritable().then(function(w){
+        return w.write(JSON.stringify(self.buildSnapshot(),null,2)).then(function(){ return w.close(); });
+      });
+    }
+    var watchdog=new Promise(function(_,rej){ wd=setTimeout(function(){ rej(new Error("write-timeout")); },7000); });
+    this._fileDirty=false;
     try{
-      var w=await this._fileHandle.createWritable();
-      await w.write(JSON.stringify(this.buildSnapshot(),null,2));
-      await w.close();
-      this._fileDirty=false;
+      await Promise.race([doWrite(),watchdog]);
+      clearTimeout(wd);
+      this._fileWriting=false;
       this._fileRetried=false;
-      if(this.state.fileStatus!=="on") this.setState({fileStatus:"on"});
+      this._lastSaved=this.getNowInTz(this.state.prefs.timezone||"Pacific/Auckland");
+      if(this._fileDirty){ this.scheduleFileSave(); }
+      else { this.setState({fileStatus:"on"}); }
     }catch(e){
-      var self=this;
+      clearTimeout(wd);
+      this._fileWriting=false;
+      this._fileDirty=true;
       if(!this._fileRetried){
         this._fileRetried=true;
         clearTimeout(this._ft);
-        this._ft=setTimeout(function(){ self.writeDataFile(); },1600);
+        this._ft=setTimeout(function(){ self.writeDataFile(); },2500);
       } else {
         this._fileRetried=false;
         if(this.state.fileStatus!=="blocked") this.setState({fileStatus:"blocked"});
@@ -185,9 +199,9 @@ class Component extends DCLogic {
   }
   filePillLabel(){
     var st=this.state.fileStatus;
-    if(st==="on") return "\u25CF "+(this.state.fileName||"Synced");
+    if(st==="on") return "\u25CF Saved"+(this._lastSaved?" "+this._lastSaved:"")+(this.state.fileName?" \u00B7 "+this.state.fileName:"");
     if(st==="dirty") return "\u25CF Saving\u2026";
-    if(st==="blocked") return "\u25CF Blocked \u2014 tap to retry";
+    if(st==="blocked") return "\u25CF Save stuck \u2014 tap to retry";
     if(st==="loaded") return "\u25CF "+(this.state.fileName||"Loaded")+" (copy)";
     return "\u25CB Data file";
   }
@@ -455,6 +469,58 @@ class Component extends DCLogic {
     return placed;
   }
   toggleLens(gid){ this.setState(function(s){ return {lensGoal:s.lensGoal===gid?null:gid}; }); }
+
+  /* ---------- drag snap: grab-offset compensation + drop preview ---------- */
+  dragSpanFor(id){
+    var s=this.state;
+    if(!id) return 1;
+    if(id.slice(0,5)==="appt:"){ var a=s.appts.find(function(x){ return x.id===id.slice(5); }); return a?Math.max(1,Math.ceil((a.duration||1)*2)):1; }
+    if(id.slice(0,5)==="step:"){
+      var p=id.split(":"), f=this.findGoal(p[1]); if(!f) return 1;
+      var st=f.goal.steps.find(function(x){ return x.id===p[2]; }); return st?Math.max(1,Math.ceil((st.hours||1)*2)):1;
+    }
+    var t=s.tasks.find(function(x){ return x.id===id; }); return t?Math.max(1,Math.ceil((t.estimatedHours||1)*2)):1;
+  }
+  dragColorFor(id){
+    var s=this.state;
+    if(!id) return "rgba(255,255,255,.8)";
+    if(id.slice(0,5)==="appt:"){ var a=s.appts.find(function(x){ return x.id===id.slice(5); }); return (a&&a.color)||"#DC2626"; }
+    if(id.slice(0,5)==="step:"){ var f=this.findGoal(id.split(":")[1]); return f?this.GOAL_COLORS[f.goal.colorIdx%4]:"rgba(255,255,255,.8)"; }
+    return "rgba(255,255,255,.8)";
+  }
+  grabOffset(e,span){
+    try{
+      var r=e.currentTarget.getBoundingClientRect();
+      var sh=r.height/Math.max(1,span);
+      return Math.max(0,Math.min(span-1,Math.floor((e.clientY-r.top)/sh)));
+    }catch(err){ return 0; }
+  }
+  slotExtra(e){
+    try{
+      var r=e.currentTarget.getBoundingClientRect();
+      if(!r.height) return 0;
+      return Math.max(0,Math.floor((e.clientY-r.top)/r.height));
+    }catch(err){ return 0; }
+  }
+  snapIdx(time,extra){
+    var SL=this.SL, ti=SL.indexOf(time); if(ti<0) return 0;
+    ti+=(extra||0);
+    var off=(this._dragMeta&&this._dragMeta.offsetSlots)||0;
+    var span=this.dragSpanFor(this.state.dragId);
+    return Math.max(0,Math.min(ti-off,SL.length-span));
+  }
+  updateDropHint(col,time,extra){
+    var s=this.state, id=s.dragId;
+    if(!id){ if(s.dropHint) this.setState({dropHint:null}); return; }
+    var start=this.snapIdx(time,extra), span=this.dragSpanFor(id);
+    var h=s.dropHint;
+    if(h&&h.wkKey===col.wkKey&&h.di===col.di&&h.start===start&&h.span===span) return;
+    this.setState({dropHint:{wkKey:col.wkKey,di:col.di,start:start,span:span}});
+  }
+  clearDrag(){
+    this._dragMeta=null;
+    this.setState({dropHint:null,dragId:null,dragOrigin:null,stepDrag:null});
+  }
 
   /* ---------- ribbon overlay (rubber-band links between sibling steps) ---------- */
   scheduleRibbons(){
@@ -973,10 +1039,10 @@ class Component extends DCLogic {
                 background:st.done?color:"rgba(255,255,255,.04)"},
               mark:st.done?"\u2713":"",
               onTick:function(e){ e.stopPropagation(); self.toggleStepDone(g.id,st.id); },
-              onDragStart:function(e){ e.stopPropagation(); e.dataTransfer.setData("text/plain","step:"+g.id+":"+st.id); self.setState({stepDrag:{gid:g.id,from:si,over:null},dragId:"step:"+g.id+":"+st.id,dragOrigin:wk}); },
+              onDragStart:function(e){ e.stopPropagation(); e.dataTransfer.setData("text/plain","step:"+g.id+":"+st.id); self._dragMeta={offsetSlots:0}; self.setState({stepDrag:{gid:g.id,from:si,over:null},dragId:"step:"+g.id+":"+st.id,dragOrigin:wk}); },
               onDragOver:function(e){ e.preventDefault(); e.stopPropagation(); if(s.stepDrag&&s.stepDrag.gid===g.id&&s.stepDrag.over!==si) self.setState({stepDrag:Object.assign({},s.stepDrag,{over:si})}); },
-              onDrop:function(e){ e.preventDefault(); e.stopPropagation(); var sd=s.stepDrag; if(sd&&sd.gid===g.id&&sd.from!==si){ self.reorderStep(g.id,sd.from,si); } self.setState({stepDrag:null,dragId:null,dragOrigin:null}); },
-              onDragEnd:function(){ self.setState({stepDrag:null}); }
+              onDrop:function(e){ e.preventDefault(); e.stopPropagation(); var sd=s.stepDrag; if(sd&&sd.gid===g.id&&sd.from!==si){ self.reorderStep(g.id,sd.from,si); } self.clearDrag(); },
+              onDragEnd:function(){ self.clearDrag(); }
             };
           })
         };
@@ -1004,7 +1070,8 @@ class Component extends DCLogic {
           borderLeft:"3px solid "+(g?g.color:"rgba(255,255,255,.18)"),
           color:"#E7E9EC"},
         metaStyle:{fontSize:9.5,marginTop:2,color:di&&di.urgent?"#FCA5A5":(noPri?"rgba(231,233,236,.4)":pc.solid),fontWeight:600},
-        onDragStart:function(e){ e.dataTransfer.setData("text/plain",t.id); self.setState({dragId:t.id,dragOrigin:wk}); },
+        onDragStart:function(e){ e.dataTransfer.setData("text/plain",t.id); self._dragMeta={offsetSlots:0}; self.setState({dragId:t.id,dragOrigin:wk}); },
+        onDragEnd:function(){ self.clearDrag(); },
         onClick:function(){ if(!s.dragId) self.openTaskModal(t); else self.setState({dragId:null}); }
       };
     });
@@ -1028,6 +1095,7 @@ class Component extends DCLogic {
 
     var nowStr=this.getNowInTz(tz);
     var nowH=parseInt(nowStr.split(":")[0],10), nowM=parseInt(nowStr.split(":")[1],10);
+    var hintColor=this.dragColorFor(s.dragId);
 
     var rows=SL.map(function(time){
       var isH=time.slice(-2)==="00", meal=self.MEAL_SLOTS[time];
@@ -1042,18 +1110,27 @@ class Component extends DCLogic {
           var gf=self.findGoal(entry.goalId);
           if(gf){ stepGoal=gf.goal; stepObj=stepGoal.steps.find(function(x){ return x.id===entry.stepId; }); }
         }
-        function routeDrop(tid){
+        function routeDrop(tid,extra){
           if(!tid) return;
-          if(tid.slice(0,5)==="appt:"){ self.rescheduleAppt(tid.slice(5),c,time); }
-          else if(tid.slice(0,5)==="step:"){ var p=tid.split(":"); self.placeStep(p[1],p[2],c,time); self.setState({dragId:null,dragOrigin:null,stepDrag:null}); }
-          else self.handleDrop(tid,c,time);
+          var t2=SL[self.snapIdx(time,extra)]||time;
+          if(tid.slice(0,5)==="appt:"){ self.rescheduleAppt(tid.slice(5),c,t2); }
+          else if(tid.slice(0,5)==="step:"){ var p=tid.split(":"); self.placeStep(p[1],p[2],c,t2); }
+          else self.handleDrop(tid,c,t2);
+          self.clearDrag();
         }
+        var ti0=SL.indexOf(time);
+        var hint=s.dropHint;
+        var inHint=hint&&hint.wkKey===c.wkKey&&hint.di===c.di&&ti0>=hint.start&&ti0<hint.start+hint.span;
         var cell={
           style:{borderTop:isH?"1px solid rgba(255,255,255,.11)":"1px solid rgba(255,255,255,.045)",borderLeft:"1px solid rgba(255,255,255,.045)",minHeight:34,padding:1,position:"relative",
-            background: (aE&&!entry) ? "rgba(220,38,38,.10)" : (s.dragId?"rgba(109,90,240,.09)":"transparent")},
-          onDragOver:function(e){ e.preventDefault(); },
-          onDrop:function(e){ e.preventDefault(); var tid=e.dataTransfer.getData("text/plain")||s.dragId; routeDrop(tid); },
-          onClick:function(){ if(s.dragId){ routeDrop(s.dragId); } else if(!entry && !aE){ self.openSlotModal(c,time); } },
+            background: inHint ? "rgba(255,255,255,.13)" : (aE&&!entry) ? "rgba(220,38,38,.10)" : (s.dragId?"rgba(109,90,240,.07)":"transparent")},
+          hintStyle: inHint ? {position:"absolute",left:0,right:0,top:-1,bottom:-1,zIndex:5,pointerEvents:"none",
+            borderLeft:"2px dashed "+hintColor,borderRight:"2px dashed "+hintColor,
+            borderTop:ti0===hint.start?"2px dashed "+hintColor:"none",
+            borderBottom:ti0===hint.start+hint.span-1?"2px dashed "+hintColor:"none"} : null,
+          onDragOver:function(e){ e.preventDefault(); self.updateDropHint(c,time,self.slotExtra(e)); },
+          onDrop:function(e){ e.preventDefault(); var tid=e.dataTransfer.getData("text/plain")||s.dragId; routeDrop(tid,self.slotExtra(e)); },
+          onClick:function(){ if(s.dragId){ routeDrop(s.dragId,0); } else if(!entry && !aE){ self.openSlotModal(c,time); } },
           meal:meal||null, appt:null, task:null,
           todayStyle:c.isToday?{position:"absolute",left:-1,top:-1,bottom:-1,width:2,background:entry?"rgba(255,255,255,.85)":accent,zIndex:6,pointerEvents:"none"}:null,
           nowStyle:inSlot?{position:"absolute",left:0,right:0,top:nowPct+"%",height:0,zIndex:7,pointerEvents:"none",borderTop:"2px solid "+(entry?"rgba(255,255,255,.9)":"#FF3D6E"),boxShadow:"0 0 8px rgba(255,61,110,.8)"}:null
@@ -1061,7 +1138,8 @@ class Component extends DCLogic {
         if(aE&&aE.isStart&&!entry){
           var ac=aE.appt.color||"#DC2626";
           cell.appt={
-            onDragStart:function(e){ e.stopPropagation(); e.dataTransfer.setData("text/plain","appt:"+aE.appt.id); },
+            onDragStart:function(e){ e.stopPropagation(); e.dataTransfer.setData("text/plain","appt:"+aE.appt.id); self._dragMeta={offsetSlots:self.grabOffset(e,aE.span)}; self.setState({dragId:"appt:"+aE.appt.id}); },
+            onDragEnd:function(){ self.clearDrag(); },
             label:"\u25CE  "+aE.appt.name,
             style:Object.assign({position:"absolute",top:1,left:1,right:1,height:"calc("+(aE.span*100)+"% - 2px)",borderRadius:7,padding:"3px 7px",fontSize:10.5,fontWeight:700,zIndex:3,cursor:"pointer",overflow:"hidden",display:"flex",flexDirection:"column"},self.solidChip(ac,false),s.lensGoal?{opacity:0.22}:null),
             onClick:function(e){ e.stopPropagation(); if(self.isResizing()) return; self.openApptModal(aE.appt); },
@@ -1106,7 +1184,8 @@ class Component extends DCLogic {
             onLeave:function(){ self.setState({hoverTask:null}); },
             style:Object.assign({position:"absolute",top:1,left:1,right:1,height:"calc("+(entry.span*100)+"% - 2px)",borderRadius:7,padding:"3px 5px",fontSize:10.5,cursor:"grab",zIndex:2,lineHeight:1.28,display:"flex",flexDirection:"column",overflow:"hidden",textDecoration:task.completed?"line-through":"none"},chip),
             doneStyle:{width:20,height:20,borderRadius:6,border:"1px solid rgba(255,255,255,.45)",background:task.completed?"#FFFFFF":"rgba(255,255,255,.14)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0,flexShrink:0},
-            onDragStart:function(e){ e.dataTransfer.setData("text/plain",task.id); self.setState({dragId:task.id,dragOrigin:c.wkKey}); },
+            onDragStart:function(e){ e.dataTransfer.setData("text/plain",task.id); self._dragMeta={offsetSlots:self.grabOffset(e,entry.span)}; self.setState({dragId:task.id,dragOrigin:c.wkKey}); },
+            onDragEnd:function(){ self.clearDrag(); },
             onClick:function(e){ e.stopPropagation(); if(self.isResizing()) return; self.openTaskModal(task); },
             onDup:function(e){ e.stopPropagation(); self.duplicateTask(task.id); },
             onDone:function(e){ e.stopPropagation(); self.toggleDone(task.id); },
@@ -1161,7 +1240,8 @@ class Component extends DCLogic {
               background:stepObj.done?"#101319":"rgba(255,255,255,.55)",
               color:stepObj.done?gcol:"#0B0D11",
               cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0,fontSize:10,fontWeight:800},
-            onDragStart:function(e){ e.dataTransfer.setData("text/plain","step:"+stepGoal.id+":"+stepObj.id); self.setState({dragId:"step:"+stepGoal.id+":"+stepObj.id,dragOrigin:c.wkKey}); },
+            onDragStart:function(e){ e.dataTransfer.setData("text/plain","step:"+stepGoal.id+":"+stepObj.id); self._dragMeta={offsetSlots:self.grabOffset(e,entry.span)}; self.setState({dragId:"step:"+stepGoal.id+":"+stepObj.id,dragOrigin:c.wkKey}); },
+            onDragEnd:function(){ self.clearDrag(); },
             onClick:function(e){ e.stopPropagation(); if(self.isResizing()) return; self.openGoalModal(stepGoal); },
             onTick:function(e){ e.stopPropagation(); self.toggleStepDone(stepGoal.id,stepObj.id); },
             onResize:function(e){

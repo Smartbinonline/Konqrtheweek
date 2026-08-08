@@ -130,16 +130,19 @@
                         <sc-if value="{{ cell.nowStyle }}" hint-placeholder-val="{{ false }}">
                           <div style="{{ cell.nowStyle }}"></div>
                         </sc-if>
+                        <sc-if value="{{ cell.hintStyle }}" hint-placeholder-val="{{ false }}">
+                          <div style="{{ cell.hintStyle }}"></div>
+                        </sc-if>
                         <sc-if value="{{ cell.meal }}" hint-placeholder-val="{{ false }}">
                           <div style="position:absolute;top:0;left:0;right:0;height:0;border-top:1px dashed rgba(224,176,80,.5);z-index:0;pointer-events:none">
                             <span style="position:absolute;left:3px;top:-1px;font-size:7.5px;letter-spacing:.06em;color:rgba(240,200,120,.75);line-height:1">{{ cell.meal }}</span>
                           </div>
                         </sc-if>
                         <sc-if value="{{ cell.appt }}" hint-placeholder-val="{{ false }}">
-                          <div draggable="true" sc-camel-on-drag-start="{{ cell.appt.onDragStart }}" sc-camel-on-click="{{ cell.appt.onClick }}" style="{{ cell.appt.style }}"><div style="flex:1;overflow:hidden">{{ cell.appt.label }}</div><div sc-camel-on-mouse-down="{{ cell.appt.onResize }}" title="Drag to resize duration" style="height:8px;cursor:ns-resize;border-top:2px solid rgba(255,255,255,.65);margin:0 -7px -3px;flex-shrink:0"></div></div>
+                          <div draggable="true" sc-camel-on-drag-start="{{ cell.appt.onDragStart }}" sc-camel-on-drag-end="{{ cell.appt.onDragEnd }}" sc-camel-on-click="{{ cell.appt.onClick }}" style="{{ cell.appt.style }}"><div style="flex:1;overflow:hidden">{{ cell.appt.label }}</div><div sc-camel-on-mouse-down="{{ cell.appt.onResize }}" title="Drag to resize duration" style="height:8px;cursor:ns-resize;border-top:2px solid rgba(255,255,255,.65);margin:0 -7px -3px;flex-shrink:0"></div></div>
                         </sc-if>
                         <sc-if value="{{ cell.task }}" hint-placeholder-val="{{ false }}">
-                          <div draggable="true" sc-camel-on-drag-start="{{ cell.task.onDragStart }}" sc-camel-on-click="{{ cell.task.onClick }}" sc-camel-on-mouse-enter="{{ cell.task.onEnter }}" sc-camel-on-mouse-leave="{{ cell.task.onLeave }}" style="{{ cell.task.style }}">
+                          <div draggable="true" sc-camel-on-drag-start="{{ cell.task.onDragStart }}" sc-camel-on-drag-end="{{ cell.task.onDragEnd }}" sc-camel-on-click="{{ cell.task.onClick }}" sc-camel-on-mouse-enter="{{ cell.task.onEnter }}" sc-camel-on-mouse-leave="{{ cell.task.onLeave }}" style="{{ cell.task.style }}">
                             <div>
                               <span style="{{ cell.task.nameStyle }}">{{ cell.task.name }}</span>
                               <div style="position:absolute;top:2px;right:3px;display:flex;gap:4px;z-index:2">
@@ -167,7 +170,7 @@
                           </div>
                         </sc-if>
                         <sc-if value="{{ cell.step }}" hint-placeholder-val="{{ false }}">
-                          <div draggable="true" data-stepblock="{{ cell.step.domAttr }}" sc-camel-on-drag-start="{{ cell.step.onDragStart }}" sc-camel-on-click="{{ cell.step.onClick }}" style="{{ cell.step.style }}">
+                          <div draggable="true" data-stepblock="{{ cell.step.domAttr }}" sc-camel-on-drag-start="{{ cell.step.onDragStart }}" sc-camel-on-drag-end="{{ cell.step.onDragEnd }}" sc-camel-on-click="{{ cell.step.onClick }}" style="{{ cell.step.style }}">
                             <div style="{{ cell.step.goalTagStyle }}">{{ cell.step.goalName }}</div>
                             <span style="{{ cell.step.nameStyle }}">{{ cell.step.name }}</span>
                             <sc-if value="{{ cell.step.showSub }}" hint-placeholder-val="{{ false }}">
@@ -203,7 +206,7 @@
                   </sc-raw-select>
                 </sc-if>
                 <sc-for list="{{ unschedList }}" as="t" hint-placeholder-count="6">
-                  <div draggable="true" sc-camel-on-drag-start="{{ t.onDragStart }}" sc-camel-on-click="{{ t.onClick }}" style="{{ t.style }}">
+                  <div draggable="true" sc-camel-on-drag-start="{{ t.onDragStart }}" sc-camel-on-drag-end="{{ t.onDragEnd }}" sc-camel-on-click="{{ t.onClick }}" style="{{ t.style }}">
                     <div style="font-weight:600;font-size:11.5px">{{ t.name }}</div>
                     <div style="{{ t.metaStyle }}">{{ t.meta }}</div>
                   </div>
