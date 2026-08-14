@@ -3154,7 +3154,7 @@ class Component extends DCLogic {
   ld(k,f){ try{ var v=localStorage.getItem("konqr_"+k); return v!==null?JSON.parse(v):f; }catch(e){ return f; } }
   sv(k,d){ try{ localStorage.setItem("konqr_"+k,JSON.stringify(d)); }catch(e){} }
   /* ---------- cloud data file sync ---------- */
-  BUILD = "v14.4";
+  BUILD = "v14.5";
   hasFS(){ return "showOpenFilePicker" in window; }
   lm(){ try{ return Number(localStorage.getItem("konqr_v13-modifiedAt"))||0; }catch(e){ return 0; } }
   touchLm(){ try{ localStorage.setItem("konqr_v13-modifiedAt",String(Date.now())); }catch(e){} }
@@ -3360,6 +3360,7 @@ class Component extends DCLogic {
 
   componentDidMount(){
     var self=this;
+    window.__konqr=this; /* debugging handle */
     this.setState({
       tasks:this.ld("v13-tasks",this.ST), groups:this.ld("v13-groups",this.SG), goals:this.ld("v13-goals",this.SGo),
       mission:this.ld("v13-mission",this.SEED_M), cal:this.ld("v13-cal",{}), appts:this.ld("v13-appts",this.SA),
@@ -3390,13 +3391,26 @@ class Component extends DCLogic {
   }
   componentWillUnmount(){ window.removeEventListener("resize",this._rz); window.removeEventListener("beforeunload",this._bu); clearInterval(this._iv); clearTimeout(this._tt); clearTimeout(this._ft); window.removeEventListener("scroll",this._rib,true); window.removeEventListener("resize",this._rib); var sv=document.getElementById("konqr-ribbons"); if(sv&&sv.parentNode) sv.parentNode.removeChild(sv); }
   componentDidUpdate(pp, ps){
+    /* NOTE: the DC runtime invokes this with (prevProps) ONLY — ps is always undefined.
+       Data-change detection must therefore keep its own baseline of state references. */
     if(!this.state.loaded) return;
     var s=this.state;
-    this.sv("v13-tasks",s.tasks); this.sv("v13-groups",s.groups); this.sv("v13-goals",s.goals);
-    this.sv("v13-mission",s.mission); this.sv("v13-cal",s.cal); this.sv("v13-appts",s.appts);
-    this.sv("v13-prefs",s.prefs); this.sv("v13-wgoals",s.wgoals); this.sv("v13-gweek",s.gweek);
-    var dataChanged = !ps || ps.tasks!==s.tasks || ps.groups!==s.groups || ps.goals!==s.goals || ps.mission!==s.mission || ps.cal!==s.cal || ps.appts!==s.appts || ps.prefs!==s.prefs || ps.wgoals!==s.wgoals || ps.gweek!==s.gweek;
-    if(dataChanged){ this.touchLm(); this.scheduleFileSave(); }
+    var keys=["tasks","groups","goals","mission","cal","appts","prefs","wgoals","gweek"];
+    var ld=this._lastData, changed=false, self=this;
+    if(!ld){
+      ld=this._lastData={};
+      /* first update after load: set baseline + persist once, no save scheduled */
+      keys.forEach(function(k){ ld[k]=s[k]; self.sv("v13-"+k,s[k]); });
+    } else {
+      keys.forEach(function(k){ if(ld[k]!==s[k]){ changed=true; ld[k]=s[k]; } });
+    }
+    if(changed){
+      this.sv("v13-tasks",s.tasks); this.sv("v13-groups",s.groups); this.sv("v13-goals",s.goals);
+      this.sv("v13-mission",s.mission); this.sv("v13-cal",s.cal); this.sv("v13-appts",s.appts);
+      this.sv("v13-prefs",s.prefs); this.sv("v13-wgoals",s.wgoals); this.sv("v13-gweek",s.gweek);
+      this.touchLm();
+      this.scheduleFileSave();
+    }
     this.scheduleRibbons();
   }
 
