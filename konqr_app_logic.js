@@ -91,7 +91,71 @@ class Component extends DCLogic {
   ld(k,f){ try{ var v=localStorage.getItem("konqr_"+k); return v!==null?JSON.parse(v):f; }catch(e){ return f; } }
   sv(k,d){ try{ localStorage.setItem("konqr_"+k,JSON.stringify(d)); }catch(e){} }
   /* ---------- cloud data file sync ---------- */
+  BUILD = "v14.4";
   hasFS(){ return "showOpenFilePicker" in window; }
+  lm(){ try{ return Number(localStorage.getItem("konqr_v13-modifiedAt"))||0; }catch(e){ return 0; } }
+  touchLm(){ try{ localStorage.setItem("konqr_v13-modifiedAt",String(Date.now())); }catch(e){} }
+  /* persist the file handle so reconnect survives closing the app */
+  idbOpen(){
+    return new Promise(function(res,rej){
+      var r=indexedDB.open("konqr-fs",1);
+      r.onupgradeneeded=function(){ r.result.createObjectStore("handles"); };
+      r.onsuccess=function(){ res(r.result); };
+      r.onerror=function(){ rej(r.error); };
+    });
+  }
+  idbPutHandle(h){
+    return this.idbOpen().then(function(db){
+      return new Promise(function(res,rej){
+        var tx=db.transaction("handles","readwrite");
+        tx.objectStore("handles").put(h,"data");
+        tx.oncomplete=function(){ db.close(); res(); };
+        tx.onerror=function(){ db.close(); rej(tx.error); };
+      });
+    }).catch(function(){});
+  }
+  idbGetHandle(){
+    return this.idbOpen().then(function(db){
+      return new Promise(function(res){
+        var tx=db.transaction("handles","readonly");
+        var rq=tx.objectStore("handles").get("data");
+        rq.onsuccess=function(){ db.close(); res(rq.result||null); };
+        rq.onerror=function(){ db.close(); res(null); };
+      });
+    }).catch(function(){ return null; });
+  }
+  /* decide direction on (re)connect: newest data wins — never clobber newer local work */
+  smartSync(txt,fname){
+    var localMs=this.lm();
+    var fileMs=0, parsed=null;
+    if(txt&&txt.trim().length){
+      try{ parsed=JSON.parse(txt); fileMs=parsed.savedAt?Date.parse(parsed.savedAt)||0:0; }
+      catch(e){ this.toast("File is not valid JSON — keeping this device's data; file will be overwritten"); this.scheduleFileSave(); return; }
+    }
+    if(!parsed){ this.toast("Connected "+fname+" — saving this device's data to it"); this.scheduleFileSave(); return; }
+    if(fileMs>localMs+3000){
+      this.applySnapshot(parsed);
+      this.toast("Loaded newer data from "+fname+" (saved "+new Date(fileMs).toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"})+")");
+    } else if(localMs>fileMs+3000){
+      try{ localStorage.setItem("konqr_v13-file-prev",txt.slice(0,2000000)); }catch(e){}
+      this.toast("This device's data is newer — "+fname+" will be updated (old copy kept as backup)");
+      this.scheduleFileSave();
+    } else {
+      this.toast("Connected "+fname+" — in sync");
+    }
+  }
+  async autoConnect(h){
+    try{
+      this._fileHandle=h;
+      var f=await h.getFile();
+      var txt=await f.text();
+      this.setState({fileStatus:"on",fileName:f.name});
+      this.smartSync(txt,f.name);
+    }catch(e){
+      this._fileHandle=null;
+      this.setState({fileStatus:"off"});
+    }
+  }
   buildSnapshot(){
     var s=this.state;
     return { app:"KONQR", version:14, savedAt:new Date().toISOString(),
@@ -152,13 +216,10 @@ class Component extends DCLogic {
         var res=await window.showOpenFilePicker({types:[{description:"KONQR data",accept:{"application/json":[".json"]}}]});
         var h=res[0]; this._fileHandle=h;
         try{ if(h.requestPermission) await h.requestPermission({mode:"readwrite"}); }catch(e){}
+        this.idbPutHandle(h);
         var f=await h.getFile(); var txt=await f.text();
-        if(txt && txt.trim().length){
-          try{ this.applySnapshot(JSON.parse(txt)); this.toast("Loaded from "+f.name+" \u2014 autosave on"); }
-          catch(e){ this.toast("File is not valid JSON \u2014 it will be overwritten on next change"); }
-        } else { this.toast("Connected "+f.name+" \u2014 autosave on"); }
-        this._fileDirty=false;
         this.setState({fileStatus:"on", fileName:f.name});
+        this.smartSync(txt,f.name);
       }catch(e){
         if(e && e.name==="AbortError"){
           this.toast("No file yet \u2014 choose where to create konqr-data.json");
@@ -186,6 +247,7 @@ class Component extends DCLogic {
         var h=await window.showSaveFilePicker({suggestedName:"konqr-data.json",types:[{description:"KONQR data",accept:{"application/json":[".json"]}}]});
         this._fileHandle=h;
         try{ if(h.requestPermission) await h.requestPermission({mode:"readwrite"}); }catch(e){}
+        this.idbPutHandle(h);
         await this.writeDataFile();
         this.setState({fileName:h.name||"konqr-data.json"});
         this.toast("Saved \u2014 autosave on");
@@ -202,6 +264,7 @@ class Component extends DCLogic {
     if(st==="on") return "\u25CF Saved"+(this._lastSaved?" "+this._lastSaved:"")+(this.state.fileName?" \u00B7 "+this.state.fileName:"");
     if(st==="dirty") return "\u25CF Saving\u2026";
     if(st==="blocked") return "\u25CF Save stuck \u2014 tap to retry";
+    if(st==="reconnect") return "\u27F3 Tap to reconnect "+(this.state.fileName||"data file");
     if(st==="loaded") return "\u25CF "+(this.state.fileName||"Loaded")+" (copy)";
     return "\u25CB Data file";
   }
@@ -210,10 +273,21 @@ class Component extends DCLogic {
     if(st==="on") return "#22C55E";
     if(st==="dirty") return "#F59E0B";
     if(st==="blocked") return "#EF4444";
+    if(st==="reconnect") return "#38BDF8";
     if(st==="loaded") return "#38BDF8";
     return "rgba(231,233,236,.45)";
   }
   onFilePill(){
+    var self=this;
+    if(this.state.fileStatus==="reconnect" && this._pendingHandle){
+      var h=this._pendingHandle;
+      var rq=h.requestPermission?h.requestPermission({mode:"readwrite"}):Promise.resolve("granted");
+      Promise.resolve(rq).then(function(p){
+        if(p==="granted"){ self.autoConnect(h); }
+        else { self.toast("Permission declined — use Connect / Load file in Preferences"); self.setState({fileStatus:"off"}); }
+      }).catch(function(){ self.setState({fileStatus:"off"}); });
+      return;
+    }
     if(this.state.fileStatus==="blocked"){ this.writeDataFile(); }
     else if(!this._fileHandle){ this.connectDataFile(); }
     else { this.saveDataFile(); }
@@ -234,7 +308,18 @@ class Component extends DCLogic {
     this._iv=setInterval(function(){ self.setState({nowTick:Date.now()}); },30000);
     this._bu=function(e){ if(self._fileDirty && self._fileHandle){ self.writeDataFile(); } };
     window.addEventListener("beforeunload",this._bu);
-    setTimeout(function(){ if(!self._fileHandle && self.hasFS()){ self.toast("Tip: click \u25CB Data file (top right) to load your synced data"); } },1200);
+    if(this.hasFS()){
+      this.idbGetHandle().then(function(h){
+        if(!h) return;
+        self._pendingHandle=h;
+        var q=h.queryPermission?h.queryPermission({mode:"readwrite"}):Promise.resolve("prompt");
+        Promise.resolve(q).then(function(p){
+          if(p==="granted"){ self.autoConnect(h); }
+          else { self.setState({fileStatus:"reconnect", fileName:h.name||"konqr-data.json"}); }
+        }).catch(function(){ self.setState({fileStatus:"reconnect", fileName:h.name||"konqr-data.json"}); });
+      });
+    }
+    setTimeout(function(){ if(!self._fileHandle && !self._pendingHandle && self.hasFS()){ self.toast("Tip: click \u25CB Data file (top right) to load your synced data"); } },1200);
     this._rib=function(){ self.scheduleRibbons(); };
     window.addEventListener("scroll",this._rib,true);
     window.addEventListener("resize",this._rib);
@@ -248,7 +333,7 @@ class Component extends DCLogic {
     this.sv("v13-mission",s.mission); this.sv("v13-cal",s.cal); this.sv("v13-appts",s.appts);
     this.sv("v13-prefs",s.prefs); this.sv("v13-wgoals",s.wgoals); this.sv("v13-gweek",s.gweek);
     var dataChanged = !ps || ps.tasks!==s.tasks || ps.groups!==s.groups || ps.goals!==s.goals || ps.mission!==s.mission || ps.cal!==s.cal || ps.appts!==s.appts || ps.prefs!==s.prefs || ps.wgoals!==s.wgoals || ps.gweek!==s.gweek;
-    if(dataChanged) this.scheduleFileSave();
+    if(dataChanged){ this.touchLm(); this.scheduleFileSave(); }
     this.scheduleRibbons();
   }
 
@@ -1441,8 +1526,8 @@ class Component extends DCLogic {
       fileStatusText:self.filePillLabel(),
       fileStatusColor:self.filePillColor(),
       fileHelp:(self.hasFS()
-        ? "First time: click Save to create konqr-data.json in your OneDrive data folder. After that, Connect it once per session and every change autosaves straight to it."
-        : "This browser cannot write files directly. Load the JSON from your OneDrive app, and Save downloads an updated copy to put back."),
+        ? "App remembers your data file — on reopen it reconnects automatically (or shows a blue 'Tap to reconnect' pill, one click). On connect, whichever side has newer data wins: a stale file will never overwrite newer work on this device. Build "+self.BUILD+"."
+        : "This browser cannot write files directly. Load the JSON from your OneDrive app, and Save downloads an updated copy to put back. Build "+self.BUILD+"."),
       fsAvailable:self.hasFS()
     };
 
@@ -1585,6 +1670,7 @@ class Component extends DCLogic {
         filter:"hue-rotate("+(this.props.liquidHue||0)+"deg)"},
       brandDotStyle:{width:6,height:6,borderRadius:"50%",background:accent,boxShadow:"0 0 10px "+accent,display:"inline-block"},
       clockLabel:nowStr+" \u00B7 "+tz.split("/")[1].replace("_"," "),
+      buildLabel:this.BUILD,
       toast:s.toast, isMob:s.isMob,
       showNav: true,
       navStyle: s.isMob
