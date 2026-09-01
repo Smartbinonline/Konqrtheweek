@@ -68,7 +68,7 @@ class Component extends DCLogic {
   state = {
     view:"calendar", tasks:this.ST, groups:this.SG, goals:this.SGo, mission:this.SEED_M,
     cal:{}, appts:this.SA, prefs:this.SPr, wgoals:{}, gweek:{}, loaded:false,
-    lensGoal:null, taskPanel:false, stepDrag:null, dropHint:null,
+    lensGoal:null, taskPanel:true, stepDrag:null, dropHint:null, cloud:"idle",
     anchorMs:this.getMon(new Date()).getTime(), dragId:null, dragOrigin:null,
     plFilter:"all", editWG:-1, wgDraft:"", nowTick:Date.now(), mobDay:0, sideOpen:false,
     isMob:false, isPortrait:false, navHover:null, drawerOpen:false, hoverTask:null,
@@ -91,7 +91,260 @@ class Component extends DCLogic {
   ld(k,f){ try{ var v=localStorage.getItem("konqr_"+k); return v!==null?JSON.parse(v):f; }catch(e){ return f; } }
   sv(k,d){ try{ localStorage.setItem("konqr_"+k,JSON.stringify(d)); }catch(e){} }
   /* ---------- cloud data file sync ---------- */
-  BUILD = "v14.5";
+  BUILD = "v15.0";
+  /* ================= CLOUD SYNC (Cloudflare Worker + KV) ================= */
+  CLOUD_DEFAULT_URL = "https://konqr-sync.crawleydesign.workers.dev";
+  cloudCfg(){
+    try{ var c=JSON.parse(localStorage.getItem("konqr_cloud")); if(c&&c.url!==undefined) return c; }catch(e){}
+    return {url:this.CLOUD_DEFAULT_URL, token:"", on:false};
+  }
+  setCloudCfg(patch){
+    var c=Object.assign(this.cloudCfg(),patch);
+    try{ localStorage.setItem("konqr_cloud",JSON.stringify(c)); }catch(e){}
+    return c;
+  }
+  meta(){
+    if(!this._meta) this._meta=this.ld("v13-meta",null)||{stamps:{},calU:{},dels:{},goalWk:{},missionU:0,goalsU:0,prefsU:0,wgoalsU:0};
+    if(!this._meta.goalWk) this._meta.goalWk={};
+    return this._meta;
+  }
+  saveMeta(){ this.sv("v13-meta",this._meta); }
+
+  /* stamp per-item changes by diffing state refs against the last-seen baseline */
+  stampChanges(s){
+    var m=this.meta(), now=Date.now(), self=this;
+    this._lastItems=this._lastItems||{};
+    function diffArr(name,list){
+      var prev=self._lastItems[name]||{}, cur={};
+      (list||[]).forEach(function(it){
+        cur[it.id]=it;
+        if(prev[it.id]!==it) m.stamps[it.id]=now;
+      });
+      Object.keys(prev).forEach(function(id){
+        if(!cur[id]){ m.dels[id]=now; delete m.stamps[id]; }
+      });
+      self._lastItems[name]=cur;
+    }
+    diffArr("tasks",s.tasks); diffArr("groups",s.groups); diffArr("appts",s.appts);
+    var prevG=this._lastItems.gweekG||{}, curG={};
+    Object.keys(s.gweek||{}).forEach(function(wk){
+      (s.gweek[wk]||[]).forEach(function(g){
+        curG[g.id]=g;
+        if(prevG[g.id]!==g||m.goalWk[g.id]!==wk){ m.stamps[g.id]=now; m.goalWk[g.id]=wk; }
+      });
+    });
+    Object.keys(prevG).forEach(function(id){ if(!curG[id]){ m.dels[id]=now; delete m.stamps[id]; delete m.goalWk[id]; } });
+    this._lastItems.gweekG=curG;
+    var prevC=this._lastItems.calW||{}, curC={};
+    Object.keys(s.cal||{}).forEach(function(wk){ curC[wk]=s.cal[wk]; if(prevC[wk]!==s.cal[wk]) m.calU[wk]=now; });
+    Object.keys(prevC).forEach(function(wk){ if(curC[wk]===undefined) m.calU[wk]=now; });
+    this._lastItems.calW=curC;
+    var li=this._lastItems;
+    if(li.mission!==undefined&&li.mission!==s.mission) m.missionU=now;
+    if(li.ygoals!==undefined&&li.ygoals!==s.goals) m.goalsU=now;
+    if(li.prefs!==undefined&&li.prefs!==s.prefs) m.prefsU=now;
+    if(li.wgoals!==undefined&&li.wgoals!==s.wgoals) m.wgoalsU=now;
+    li.mission=s.mission; li.ygoals=s.goals; li.prefs=s.prefs; li.wgoals=s.wgoals;
+    var cutoff=now-90*86400000;
+    Object.keys(m.dels).forEach(function(id){ if(m.dels[id]<cutoff) delete m.dels[id]; });
+    this.saveMeta();
+  }
+  seedBaseline(s){
+    var self=this;
+    this._lastItems={tasks:{},groups:{},appts:{},gweekG:{},calW:{},mission:s.mission,ygoals:s.goals,prefs:s.prefs,wgoals:s.wgoals};
+    (s.tasks||[]).forEach(function(t){ self._lastItems.tasks[t.id]=t; });
+    (s.groups||[]).forEach(function(g){ self._lastItems.groups[g.id]=g; });
+    (s.appts||[]).forEach(function(a){ self._lastItems.appts[a.id]=a; });
+    Object.keys(s.gweek||{}).forEach(function(wk){ (s.gweek[wk]||[]).forEach(function(g){ self._lastItems.gweekG[g.id]=g; }); });
+    Object.keys(s.cal||{}).forEach(function(wk){ self._lastItems.calW[wk]=s.cal[wk]; });
+  }
+
+  /* merge two snapshots per item: newer stamp wins; tombstones beat older items */
+  mergeData(A,B){
+    var EM={stamps:{},calU:{},dels:{},goalWk:{},missionU:0,goalsU:0,prefsU:0,wgoalsU:0};
+    var ma=A.meta||EM, mb=B.meta||EM;
+    ma.stamps=ma.stamps||{}; ma.dels=ma.dels||{}; ma.calU=ma.calU||{}; ma.goalWk=ma.goalWk||{};
+    mb.stamps=mb.stamps||{}; mb.dels=mb.dels||{}; mb.calU=mb.calU||{}; mb.goalWk=mb.goalWk||{};
+    var om={stamps:{},calU:{},dels:{},goalWk:{},missionU:0,goalsU:0,prefsU:0,wgoalsU:0};
+    Object.keys(ma.dels).forEach(function(id){ om.dels[id]=ma.dels[id]; });
+    Object.keys(mb.dels).forEach(function(id){ om.dels[id]=Math.max(om.dels[id]||0,mb.dels[id]); });
+    function mergeList(la,lb){
+      la=la||[]; lb=lb||[];
+      var mapB={}, seen={}, res=[];
+      lb.forEach(function(y){ mapB[y.id]=y; });
+      la.forEach(function(x){
+        seen[x.id]=true;
+        var sa=ma.stamps[x.id]||0, sb=mb.stamps[x.id]||0;
+        var y=mapB[x.id];
+        if(y!==undefined){ res.push(sb>sa?y:x); om.stamps[x.id]=Math.max(sa,sb); }
+        else if((mb.dels[x.id]||0)>sa){ /* deleted remotely, newer */ }
+        else { res.push(x); om.stamps[x.id]=sa; }
+      });
+      lb.forEach(function(y){
+        if(seen[y.id]) return;
+        var sb=mb.stamps[y.id]||0;
+        if((ma.dels[y.id]||0)>sb) return;
+        res.push(y); om.stamps[y.id]=sb;
+      });
+      return res;
+    }
+    var out={};
+    out.tasks=mergeList(A.tasks,B.tasks);
+    out.groups=mergeList(A.groups,B.groups);
+    out.appts=mergeList(A.appts,B.appts);
+    /* goals: flatten both sides, winner keeps its week bucket */
+    function flatG(S,mm){
+      var f={};
+      Object.keys(S.gweek||{}).forEach(function(wk){
+        (S.gweek[wk]||[]).forEach(function(g){ f[g.id]={g:g,wk:(mm.goalWk[g.id]||wk),s:(mm.stamps[g.id]||0)}; });
+      });
+      return f;
+    }
+    var fa=flatG(A,ma), fb=flatG(B,mb), gout={};
+    var ids={}; Object.keys(fa).forEach(function(k){ ids[k]=1; }); Object.keys(fb).forEach(function(k){ ids[k]=1; });
+    Object.keys(ids).forEach(function(id){
+      var a=fa[id], b=fb[id], win=null;
+      if(a&&b) win=(b.s>a.s)?b:a;
+      else if(a){ if((mb.dels[id]||0)>a.s) return; win=a; }
+      else { if((ma.dels[id]||0)>b.s) return; win=b; }
+      om.stamps[id]=Math.max(a?a.s:0,b?b.s:0);
+      om.goalWk[id]=win.wk;
+      if(!gout[win.wk]) gout[win.wk]=[];
+      gout[win.wk].push(win.g);
+    });
+    out.gweek=gout;
+    /* calendar: per week, newer layout wins */
+    var wks={}; Object.keys(A.cal||{}).forEach(function(w){ wks[w]=1; }); Object.keys(B.cal||{}).forEach(function(w){ wks[w]=1; });
+    out.cal={};
+    Object.keys(wks).forEach(function(w){
+      var ua=ma.calU[w]||0, ub=mb.calU[w]||0;
+      var pick=(ub>ua)?(B.cal||{})[w]:(A.cal||{})[w];
+      if(pick===undefined) pick=(A.cal||{})[w]!==undefined?(A.cal||{})[w]:(B.cal||{})[w];
+      if(pick!==undefined) out.cal[w]=pick;
+      om.calU[w]=Math.max(ua,ub);
+    });
+    function single(field,uf){
+      var ua=ma[uf]||0, ub=mb[uf]||0;
+      om[uf]=Math.max(ua,ub);
+      return (ub>ua)?B[field]:A[field];
+    }
+    out.mission=single("mission","missionU");
+    out.goals=single("goals","goalsU");
+    out.prefs=single("prefs","prefsU");
+    out.wgoals=single("wgoals","wgoalsU");
+    out.meta=om;
+    return out;
+  }
+  dataEq(a,b){
+    var K=["tasks","groups","goals","mission","cal","appts","prefs","wgoals","gweek"];
+    return JSON.stringify(K.map(function(k){ return a[k]; }))===JSON.stringify(K.map(function(k){ return b[k]; }));
+  }
+  applyMerged(snap){
+    this._applyingRemote=true;
+    this._meta=snap.meta||this.meta();
+    this.saveMeta();
+    this.seedBaseline(snap);
+    this.applySnapshot(snap);
+    var self=this;
+    setTimeout(function(){ self._applyingRemote=false; },50);
+  }
+
+  cloudFetch(method,body){
+    var cfg=this.cloudCfg();
+    var ctl=new AbortController();
+    var to=setTimeout(function(){ ctl.abort(); },10000);
+    return fetch(cfg.url,{
+      method:method,
+      headers:{ "Authorization":"Bearer "+cfg.token, "Content-Type":"application/json" },
+      body:body?JSON.stringify(body):undefined,
+      signal:ctl.signal
+    }).finally(function(){ clearTimeout(to); });
+  }
+  setCloud(st){ if(this.state.cloud!==st) this.setState({cloud:st}); else this.setState({nowTick:Date.now()}); }
+  async doCloudPull(){
+    var cfg=this.cloudCfg();
+    if(!cfg.on||!cfg.token||this._cloudBusy) return;
+    this._cloudBusy=true;
+    this.setCloud("sync");
+    try{
+      var r=await this.cloudFetch("GET");
+      if(r.status===401){ this._cloudBusy=false; this.setCloud("error"); this.toast("Cloud sync: token rejected — check Preferences"); return; }
+      var d=await r.json();
+      this._cloudVer=d.version|0;
+      if(!d.snapshot){ this._cloudBusy=false; this.doCloudPush(); return; }
+      var local=this.buildSnapshot();
+      var merged=this.mergeData(local,d.snapshot);
+      var chL=!this.dataEq(merged,local);
+      var chR=!this.dataEq(merged,d.snapshot);
+      this._meta=merged.meta; this.saveMeta();
+      if(chL) this.applyMerged(merged);
+      this._cloudBusy=false;
+      if(chR){ this.doCloudPush(); }
+      else { this._cloudTs=this.getNowInTz(this.state.prefs.timezone||"Pacific/Auckland"); this.setCloud("ok"); }
+      if(chL) this.toast("Cloud: changes from another device merged in");
+    }catch(e){
+      this._cloudBusy=false;
+      this.setCloud("offline");
+    }
+  }
+  async doCloudPush(){
+    var cfg=this.cloudCfg();
+    if(!cfg.on||!cfg.token) return;
+    if(this._cloudBusy){ this._cloudDirty=true; return; }
+    this._cloudBusy=true;
+    this.setCloud("sync");
+    try{
+      var r=await this.cloudFetch("PUT",{baseVersion:this._cloudVer|0,snapshot:this.buildSnapshot()});
+      if(r.status===401){ this._cloudBusy=false; this.setCloud("error"); return; }
+      if(r.status===409){
+        var d=await r.json();
+        this._cloudVer=d.version|0;
+        var local=this.buildSnapshot();
+        var merged=this.mergeData(local,d.snapshot||{});
+        this._meta=merged.meta; this.saveMeta();
+        if(!this.dataEq(merged,local)) this.applyMerged(merged);
+        this._cloudBusy=false;
+        this._cloudRetry=(this._cloudRetry||0)+1;
+        if(this._cloudRetry<=3) this.doCloudPush(); else { this._cloudRetry=0; this.setCloud("error"); }
+        return;
+      }
+      var ok=await r.json();
+      this._cloudVer=ok.version|0;
+      this._cloudRetry=0;
+      this._cloudBusy=false;
+      this._cloudTs=this.getNowInTz(this.state.prefs.timezone||"Pacific/Auckland");
+      this.setCloud("ok");
+      if(this._cloudDirty){ this._cloudDirty=false; this.schedCloudPush(); }
+    }catch(e){
+      this._cloudBusy=false;
+      this._cloudDirty=true;
+      this.setCloud("offline");
+    }
+  }
+  schedCloudPush(){
+    if(!this.cloudCfg().on) return;
+    var self=this;
+    clearTimeout(this._cpt);
+    this._cpt=setTimeout(function(){ self.doCloudPush(); },3000);
+  }
+  cloudPillLabel(){
+    var st=this.state.cloud;
+    if(st==="ok") return "● Cloud"+(this._cloudTs?" "+this._cloudTs:"");
+    if(st==="sync") return "● Syncing…";
+    if(st==="offline") return "● Offline — edits safe, will sync";
+    if(st==="error") return "● Sync error — tap to retry";
+    return "● Cloud sync on";
+  }
+  cloudPillColor(){
+    var st=this.state.cloud;
+    if(st==="ok") return "#22C55E";
+    if(st==="sync") return "#F59E0B";
+    if(st==="offline") return "#38BDF8";
+    if(st==="error") return "#EF4444";
+    return "rgba(231,233,236,.6)";
+  }
+
+  parseBuild(b){ var m=/v(\d+)\.(\d+)/.exec(b||""); return m?Number(m[1])*1000+Number(m[2]):0; }
   hasFS(){ return "showOpenFilePicker" in window; }
   lm(){ try{ return Number(localStorage.getItem("konqr_v13-modifiedAt"))||0; }catch(e){ return 0; } }
   touchLm(){ try{ localStorage.setItem("konqr_v13-modifiedAt",String(Date.now())); }catch(e){} }
@@ -133,6 +386,8 @@ class Component extends DCLogic {
       catch(e){ this.toast("File is not valid JSON — keeping this device's data; file will be overwritten"); this.scheduleFileSave(); return; }
     }
     if(!parsed){ this.toast("Connected "+fname+" — saving this device's data to it"); this.scheduleFileSave(); return; }
+    var pb=this.parseBuild(parsed.build), mb=this.parseBuild(this.BUILD);
+    if(pb>mb){ this.toast("⚠ This app copy is "+this.BUILD+" but your data was last saved by "+parsed.build+" — replace this copy with the latest build!"); }
     if(fileMs>localMs+3000){
       this.applySnapshot(parsed);
       this.toast("Loaded newer data from "+fname+" (saved "+new Date(fileMs).toLocaleTimeString("en-NZ",{hour:"2-digit",minute:"2-digit"})+")");
@@ -158,11 +413,12 @@ class Component extends DCLogic {
   }
   buildSnapshot(){
     var s=this.state;
-    return { app:"KONQR", version:14, savedAt:new Date().toISOString(),
+    return { app:"KONQR", version:15, build:this.BUILD, savedAt:new Date().toISOString(), meta:this.meta(),
       tasks:s.tasks, groups:s.groups, goals:s.goals, mission:s.mission,
       cal:s.cal, appts:s.appts, prefs:s.prefs, wgoals:s.wgoals, gweek:s.gweek };
   }
   applySnapshot(d){
+    if(d&&d.meta){ this._meta=d.meta; this.saveMeta(); }
     var p={};
     ["tasks","groups","goals","mission","cal","appts","prefs","wgoals","gweek"].forEach(function(k){ if(d[k]!==undefined) p[k]=d[k]; });
     this.setState(p);
@@ -260,6 +516,7 @@ class Component extends DCLogic {
     }
   }
   filePillLabel(){
+    if(this.cloudCfg().on) return this.cloudPillLabel();
     var st=this.state.fileStatus;
     if(st==="on") return "\u25CF Saved"+(this._lastSaved?" "+this._lastSaved:"")+(this.state.fileName?" \u00B7 "+this.state.fileName:"");
     if(st==="dirty") return "\u25CF Saving\u2026";
@@ -269,6 +526,7 @@ class Component extends DCLogic {
     return "\u25CB Data file";
   }
   filePillColor(){
+    if(this.cloudCfg().on) return this.cloudPillColor();
     var st=this.state.fileStatus;
     if(st==="on") return "#22C55E";
     if(st==="dirty") return "#F59E0B";
@@ -279,6 +537,7 @@ class Component extends DCLogic {
   }
   onFilePill(){
     var self=this;
+    if(this.cloudCfg().on){ this._cloudRetry=0; this.doCloudPull(); return; }
     if(this.state.fileStatus==="reconnect" && this._pendingHandle){
       var h=this._pendingHandle;
       var rq=h.requestPermission?h.requestPermission({mode:"readwrite"}):Promise.resolve("granted");
@@ -321,12 +580,27 @@ class Component extends DCLogic {
       });
     }
     setTimeout(function(){ if(!self._fileHandle && !self._pendingHandle && self.hasFS()){ self.toast("Tip: click \u25CB Data file (top right) to load your synced data"); } },1200);
+    if(this.cloudCfg().on){
+      setTimeout(function(){ self.doCloudPull(); },400);
+    }
+    this._civ=setInterval(function(){
+      if(document.visibilityState==="visible"&&self.cloudCfg().on&&!self._cloudBusy) self.doCloudPull();
+    },45000);
+    this._cfo=function(){
+      if(!self.cloudCfg().on) return;
+      var now=Date.now();
+      if(now-(self._lastFocusPull||0)<5000) return;
+      self._lastFocusPull=now;
+      self.doCloudPull();
+    };
+    window.addEventListener("focus",this._cfo);
+    document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible") self._cfo(); });
     this._rib=function(){ self.scheduleRibbons(); };
     window.addEventListener("scroll",this._rib,true);
     window.addEventListener("resize",this._rib);
     this.scheduleRibbons();
   }
-  componentWillUnmount(){ window.removeEventListener("resize",this._rz); window.removeEventListener("beforeunload",this._bu); clearInterval(this._iv); clearTimeout(this._tt); clearTimeout(this._ft); window.removeEventListener("scroll",this._rib,true); window.removeEventListener("resize",this._rib); var sv=document.getElementById("konqr-ribbons"); if(sv&&sv.parentNode) sv.parentNode.removeChild(sv); }
+  componentWillUnmount(){ clearInterval(this._civ); clearTimeout(this._cpt); window.removeEventListener("focus",this._cfo); window.removeEventListener("resize",this._rz); window.removeEventListener("beforeunload",this._bu); clearInterval(this._iv); clearTimeout(this._tt); clearTimeout(this._ft); window.removeEventListener("scroll",this._rib,true); window.removeEventListener("resize",this._rib); var sv=document.getElementById("konqr-ribbons"); if(sv&&sv.parentNode) sv.parentNode.removeChild(sv); }
   componentDidUpdate(pp, ps){
     /* NOTE: the DC runtime invokes this with (prevProps) ONLY — ps is always undefined.
        Data-change detection must therefore keep its own baseline of state references. */
@@ -338,6 +612,7 @@ class Component extends DCLogic {
       ld=this._lastData={};
       /* first update after load: set baseline + persist once, no save scheduled */
       keys.forEach(function(k){ ld[k]=s[k]; self.sv("v13-"+k,s[k]); });
+      this.seedBaseline(s);
     } else {
       keys.forEach(function(k){ if(ld[k]!==s[k]){ changed=true; ld[k]=s[k]; } });
     }
@@ -347,6 +622,8 @@ class Component extends DCLogic {
       this.sv("v13-prefs",s.prefs); this.sv("v13-wgoals",s.wgoals); this.sv("v13-gweek",s.gweek);
       this.touchLm();
       this.scheduleFileSave();
+      if(this._applyingRemote){ this.seedBaseline(s); }
+      else { this.stampChanges(s); this.schedCloudPush(); }
     }
     this.scheduleRibbons();
   }
@@ -444,6 +721,7 @@ class Component extends DCLogic {
   openGoalModal(g){
     var self=this, wk=this.wk();
     if(g&&g.id){
+      var gf=this.findGoal(g.id); if(gf) wk=gf.wk;
       this.setState({modal:{kind:"goal"},draft:{id:g.id,wk:wk,title:g.title,colorIdx:g.colorIdx,
         steps:g.steps.map(function(st){ return {id:st.id,name:st.name,hours:st.hours,done:st.done}; })}});
     } else {
@@ -1083,8 +1361,18 @@ class Component extends DCLogic {
       };
     });
 
-    /* goal rail */
-    var wkGoals=this.goalsWk(wk);
+    /* goal rail — this week's goals plus any goal with steps placed in the visible week */
+    var wkGoals=this.goalsWk(wk).slice();
+    [wk,wkEndKey].forEach(function(k){
+      var cc=s.cal[k]||{};
+      Object.keys(cc).forEach(function(ck){
+        var e=cc[ck];
+        if(e&&e.goalId&&!wkGoals.some(function(g){ return g.id===e.goalId; })){
+          var f=self.findGoal(e.goalId);
+          if(f) wkGoals.push(f.goal);
+        }
+      });
+    });
     var placedSteps={};
     Object.keys(s.cal).forEach(function(wkK){
       var c=s.cal[wkK]||{};
@@ -1533,6 +1821,31 @@ class Component extends DCLogic {
           onPri:function(e){ patch({priority:e.target.value==="null"?null:Number(e.target.value)}); }
         };
       }),
+      cloudOn:this.cloudCfg().on,
+      cloudOff:!this.cloudCfg().on,
+      cloudUrl:this.cloudCfg().url,
+      cloudToken:this.cloudCfg().token,
+      onCloudUrl:function(e){ self.setCloudCfg({url:e.target.value.trim()}); self.setState({nowTick:Date.now()}); },
+      onCloudToken:function(e){ self.setCloudCfg({token:e.target.value.trim()}); self.setState({nowTick:Date.now()}); },
+      onCloudToggle:function(){
+        var c=self.cloudCfg();
+        if(!c.on){
+          if(!c.url||!c.token){ self.toast("Enter the cloud address and token first"); return; }
+          self.setCloudCfg({on:true});
+          self.setState({cloud:"sync"});
+          self.doCloudPull();
+          self.toast("Cloud sync ON — this device will pull, merge and push automatically");
+        } else {
+          self.setCloudCfg({on:false});
+          self.setState({cloud:"idle"});
+          self.toast("Cloud sync off — back to local/file mode");
+        }
+      },
+      onCloudNow:function(){ self._cloudRetry=0; self.doCloudPull(); },
+      cloudToggleLabel:this.cloudCfg().on?"Disable":"Enable cloud sync",
+      cloudStatusText:this.cloudCfg().on?this.cloudPillLabel():"○ Off — using local storage"+(this._fileHandle||this.state.fileStatus==="reconnect"?" + data file":""),
+      cloudStatusColor:this.cloudCfg().on?this.cloudPillColor():"rgba(231,233,236,.45)",
+      cloudHelp:"One master copy on your Cloudflare Worker — every device pulls on open/focus and every 45 s, pushes seconds after you stop editing, and merges item-by-item so phone and workstation edits both survive. Works offline; syncs when back. Phone: open the GitHub Pages address, Add to Home Screen, paste the same address + token once.",
       onExport:function(){ self.exportData(); },
       onImport:function(){ self.importData(); },
       onConnectFile:function(){ self.connectDataFile(); },
@@ -1740,7 +2053,9 @@ class Component extends DCLogic {
         : {width:210,flexShrink:0,display:"flex",flexDirection:"column",gap:10},
       goalRail:goalRail,
       goalRailPanelStyle:{width:"100%",background:"rgba(255,255,255,.045)",border:"1px solid rgba(255,255,255,.09)",backdropFilter:"blur(20px) saturate(150%)",
-        borderRadius:14,padding:13,maxHeight:s.isMob?"46vh":"calc(100vh - 180px)",overflowY:"auto"},
+        borderRadius:14,padding:13,maxHeight:s.isMob?"34vh":"44vh",overflowY:"auto",flexShrink:0},
+      sideTasksPanelStyle:{width:"100%",background:"rgba(255,255,255,.045)",border:"1px solid rgba(255,255,255,.09)",backdropFilter:"blur(20px) saturate(150%)",
+        borderRadius:14,padding:13,overflowY:"auto",maxHeight:s.isMob?"30vh":"calc(100vh - 44vh - 220px)",minHeight:120},
       taskPanelOpen:s.taskPanel,
       onToggleTaskPanel:function(){ self.setState({taskPanel:!s.taskPanel}); },
       taskBtnLabel:"Tasks ("+unsched.length+")",
