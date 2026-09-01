@@ -1,13 +1,12 @@
 # KONQR Planner
 
-Live app: enable GitHub Pages (Settings → Pages → Deploy from branch → main, / root)
-then open https://YOUR-USERNAME.github.io/konqr-planner/
+Live app: https://smartbinonline.github.io/Konqrtheweek/
+(phone: open that address, then Add to Home Screen)
 
 ## Updating to a new version
-1. Open this repo on github.com
-2. Click index.html → pencil (edit) → or easier: Add file → Upload files
-3. Drag the new index.html in, Commit. The site updates in ~1 minute.
+Push to `main` — GitHub Pages redeploys automatically in about a minute.
 
 ## Data
-App data lives in konqr-data.json in Ian's OneDrive (connect via the ○ Data file
-button, once per session per device). The app file and the data are separate.
+Data syncs across all devices via the konqr-sync Cloudflare Worker
+(Preferences → Cloud Sync, one-time address + token per device).
+The old OneDrive konqr-data.json remains as a manual backup option.
