@@ -2342,6 +2342,7 @@ option{background:#14181F;color:#E7E9EC}
     <div style="position:fixed;top:70px;left:50%;transform:translateX(-50%);background:rgba(30,34,42,.96);border:1px solid rgba(255,255,255,.16);backdrop-filter:blur(20px) saturate(150%);color:#F2F4F7;padding:10px 20px;border-radius:11px;font-size:12.5px;font-weight:500;z-index:1200;box-shadow:0 18px 40px -18px rgba(0,0,0,.9)">{{ toast }}</div>
   </sc-if>
 
+  <sc-if value="{{ notPhone }}" hint-placeholder-val="{{ true }}">
   <header style="position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:14px;padding:13px 22px;background:rgba(12,15,21,.55);backdrop-filter:blur(24px) saturate(160%);border-bottom:1px solid rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)">
 
     <div style="display:flex;align-items:baseline;gap:9px">
@@ -2356,6 +2357,7 @@ option{background:#14181F;color:#E7E9EC}
       <button sc-camel-on-click="{{ onReset }}" style="padding:5px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);color:rgba(231,233,236,.5);font-size:10.5px;cursor:pointer" style-hover="color:#fff">Reset</button>
     </div>
   </header>
+  </sc-if>
 
   <div style="display:flex;flex:1;min-height:0;position:relative;z-index:1">
     <sc-if value="{{ showNav }}" hint-placeholder-val="{{ true }}">
@@ -2380,6 +2382,29 @@ option{background:#14181F;color:#E7E9EC}
 
       <sc-if value="{{ isCalendar }}" hint-placeholder-val="{{ true }}">
         <div>
+          <sc-if value="{{ isPhone }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+              <button sc-camel-on-click="{{ onQuickAdd }}" style="{{ phoneAddStyle }}">+</button>
+              <button sc-camel-on-click="{{ onMoreSheet }}" style="{{ phoneBtnStyle }}">⋯</button>
+              <button sc-camel-on-click="{{ onFilePill }}" style="padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);color:{{ filePillColor }};font-size:9.5px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px">{{ filePill }}</button>
+              <div style="margin-left:auto;display:flex;align-items:center;gap:4px">
+                <h2 style="font-size:13px;font-weight:700;color:#F4F6F8;margin-right:4px;white-space:nowrap">{{ weekLabelShort }}</h2>
+                <button sc-camel-on-click="{{ onDayPrev }}" style="{{ phoneBtnStyle }}">‹</button>
+                <button sc-camel-on-click="{{ onDayNext }}" style="{{ phoneBtnStyle }}">›</button>
+              </div>
+            </div>
+            <sc-if value="{{ dayView }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;gap:4px;margin-bottom:8px">
+                <sc-for list="{{ dayChips }}" as="c" hint-placeholder-count="7">
+                  <button sc-camel-on-click="{{ c.onClick }}" style="{{ c.style }}">
+                    <div style="font-size:9px;font-weight:700;letter-spacing:.02em">{{ c.d }}</div>
+                    <div style="font-size:11px;font-weight:600">{{ c.n }}</div>
+                  </button>
+                </sc-for>
+              </div>
+            </sc-if>
+          </sc-if>
+          <sc-if value="{{ notPhone }}" hint-placeholder-val="{{ true }}">
           <div style="display:flex;align-items:center;gap:7px;margin-bottom:14px;flex-wrap:wrap">
             <button sc-camel-on-click="{{ onNewGoal }}" style="{{ goalBtnStyle }}">+ Goal</button>
             <button sc-camel-on-click="{{ onNewTask }}" style="padding:7px 13px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#E7E9EC;font-size:11.5px;font-weight:600;cursor:pointer" style-hover="border-color:rgba(255,255,255,.3)">+ Task</button>
@@ -2398,6 +2423,7 @@ option{background:#14181F;color:#E7E9EC}
               <button sc-camel-on-click="{{ onNext }}" title="Forward one week" style="{{ weekBtnStyle }}">››</button>
             </div>
           </div>
+          </sc-if>
 
           <sc-if value="{{ showRotateHint }}" hint-placeholder-val="{{ false }}">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);font-size:11px;color:rgba(231,233,236,.6)">
@@ -2479,9 +2505,9 @@ option{background:#14181F;color:#E7E9EC}
             </div>
             </sc-if>
 
-            <div sc-camel-on-drag-over="{{ onGridDragOver }}" style="flex:1;min-width:0;overflow-x:auto;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:8px 10px 12px;backdrop-filter:blur(22px) saturate(150%);box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 28px 60px -40px rgba(0,0,0,1)">
+            <div sc-camel-on-drag-over="{{ onGridDragOver }}" sc-camel-on-touch-start="{{ onGridTouchStart }}" sc-camel-on-touch-end="{{ onGridTouchEnd }}" style="flex:1;min-width:0;overflow-x:auto;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:8px 10px 12px;backdrop-filter:blur(22px) saturate(150%);box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 28px 60px -40px rgba(0,0,0,1)">
               <div style="{{ gridStyle }}">
-                <div style="padding:6px"></div>
+                <div style="{{ cornerStyle }}"></div>
                 <sc-for list="{{ colHeads }}" as="c" hint-placeholder-count="7">
                   <div style="{{ c.style }}">
                     <div style="font-size:11.5px;font-weight:700;letter-spacing:.02em;color:#EEF1F4">{{ c.day }}</div>
@@ -2808,13 +2834,11 @@ option{background:#14181F;color:#E7E9EC}
   </div>
 
   <sc-if value="{{ showFabs }}" hint-placeholder-val="{{ false }}">
-    <div style="position:fixed;right:14px;bottom:86px;z-index:120;display:flex;flex-direction:column;gap:10px;align-items:flex-end">
-      <button sc-camel-on-click="{{ onToggleDrawer }}" title="Weekly goals" style="{{ drawerFabStyle }}">
+    <div style="{{ fabWrapStyle }}">
+      <button sc-camel-on-click="{{ onToggleDrawer }}" title="Weekly goals &amp; tasks" style="{{ drawerFabStyle }}">
         <span style="font-size:15px;line-height:1">◎</span>
         <span style="font-size:9px;font-weight:700;letter-spacing:.06em">GOALS</span>
       </button>
-      <button sc-camel-on-click="{{ onNewAppt }}" title="New appointment" style="width:52px;height:52px;border-radius:16px;border:none;background:#DC2626;color:#fff;font-size:18px;cursor:pointer;box-shadow:0 14px 28px -12px rgba(0,0,0,1)">☼</button>
-      <button sc-camel-on-click="{{ onNewGoal }}" title="New goal" style="{{ addFabStyle }}">+</button>
     </div>
   </sc-if>
 
@@ -3040,6 +3064,22 @@ option{background:#14181F;color:#E7E9EC}
           </div>
         </sc-if>
 
+        <sc-if value="{{ modal.isQa }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <sc-for list="{{ modal.qaBtns }}" as="b" hint-placeholder-count="3">
+              <button sc-camel-on-click="{{ b.onClick }}" style="{{ b.style }}">{{ b.label }}</button>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ modal.isMore }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <sc-for list="{{ modal.moreBtns }}" as="b" hint-placeholder-count="9">
+              <button sc-camel-on-click="{{ b.onClick }}" style="{{ b.style }}">{{ b.label }}</button>
+            </sc-for>
+          </div>
+        </sc-if>
+
         <sc-if value="{{ modal.isSplit }}" hint-placeholder-val="{{ false }}">
           <div style="display:flex;flex-direction:column;gap:13px">
             <p style="font-size:13px;color:rgba(231,233,236,.6)">{{ modal.intro }}</p>
@@ -3127,7 +3167,7 @@ class Component extends DCLogic {
   SEED_M = "Ians Advancement - Power of choices from profit. Financially Independent through Passive Income. Choices to Retire. Transfer effort to own software products (High Margin, no capital). More money in Investing. Cheap place to live in NZ with Income. Spend winters offshore.";
   SPr = {
     blocks: [
-      {id:"b1",label:"Sharpen the Saw",start:"06:00",end:"07:30",priority:null,note:"Thinking, Tai Chi, wellbeing"},
+      {id:"b1",label:"Renew + Edge",start:"06:00",end:"07:30",priority:null,note:"Thinking, Tai Chi, wellbeing"},
       {id:"b2",label:"Deep Work",start:"08:00",end:"12:30",priority:1,note:"P1/P2 complex tasks"},
       {id:"b3",label:"General Work",start:"13:00",end:"17:00",priority:2,note:"P2/P3 tasks"},
       {id:"b4",label:"Admin & Light",start:"17:00",end:"18:00",priority:4,note:"P4 admin"},
@@ -3145,7 +3185,7 @@ class Component extends DCLogic {
     lensGoal:null, taskPanel:true, stepDrag:null, dropHint:null, cloud:"idle",
     anchorMs:this.getMon(new Date()).getTime(), dragId:null, dragOrigin:null,
     plFilter:"all", editWG:-1, wgDraft:"", nowTick:Date.now(), mobDay:0, sideOpen:false,
-    isMob:false, isPortrait:false, navHover:null, drawerOpen:false, hoverTask:null,
+    isMob:false, isPhone:false, isPortrait:false, navHover:null, drawerOpen:false, hoverTask:null,
     toast:null, undoStack:[], modal:null, draft:null,
     taskFilter:"all", groupFilter:"all", missionEdit:false, missionDraft:"", goalDrafts:[],
     prefsEdit:false, prefsDraft:null
@@ -3165,7 +3205,7 @@ class Component extends DCLogic {
   ld(k,f){ try{ var v=localStorage.getItem("konqr_"+k); return v!==null?JSON.parse(v):f; }catch(e){ return f; } }
   sv(k,d){ try{ localStorage.setItem("konqr_"+k,JSON.stringify(d)); }catch(e){} }
   /* ---------- cloud data file sync ---------- */
-  BUILD = "v15.0";
+  BUILD = "v15.1";
   /* ================= CLOUD SYNC (Cloudflare Worker + KV) ================= */
   CLOUD_DEFAULT_URL = "https://konqr-sync.crawleydesign.workers.dev";
   cloudCfg(){
@@ -3634,12 +3674,19 @@ class Component extends DCLogic {
     this.setState({
       tasks:this.ld("v13-tasks",this.ST), groups:this.ld("v13-groups",this.SG), goals:this.ld("v13-goals",this.SGo),
       mission:this.ld("v13-mission",this.SEED_M), cal:this.ld("v13-cal",{}), appts:this.ld("v13-appts",this.SA),
-      prefs:this.ld("v13-prefs",this.SPr), wgoals:this.ld("v13-wgoals",{}) || {}, gweek:this.ld("v13-gweek",{}) || {}, loaded:true, fileStatus:"off", fileName:"",
-      isMob: window.innerWidth < 820, isPortrait: window.innerHeight > window.innerWidth
+      prefs:this.ld("v13-prefs",this.SPr), wgoals:this.ld("v13-wgoals",{}) || {}, gweek:this.ld("v13-gweek",{}) || {}, loaded:true, mobDay:this.getTodayIdx((this.ld("v13-prefs",this.SPr)||{}).timezone||"Pacific/Auckland"), fileStatus:"off", fileName:"",
+      isMob: (window.innerWidth < 820 || Math.min(window.innerWidth,window.innerHeight) < 540), isPhone: Math.min(window.innerWidth,window.innerHeight) < 540, isPortrait: window.innerHeight > window.innerWidth
     });
-    this._rz=function(){ self.setState({isMob: window.innerWidth < 820, isPortrait: window.innerHeight > window.innerWidth}); };
+    this._rz=function(){ self.setState({isMob: (window.innerWidth < 820 || Math.min(window.innerWidth,window.innerHeight) < 540), isPhone: Math.min(window.innerWidth,window.innerHeight) < 540, isPortrait: window.innerHeight > window.innerWidth}); };
     window.addEventListener("resize",this._rz);
     this._iv=setInterval(function(){ self.setState({nowTick:Date.now()}); },30000);
+    setTimeout(function(){
+      var p=self.state.prefs;
+      if(p&&p.blocks&&p.blocks.some(function(b){ return b.label==="Sharpen the Saw"; })){
+        self.setState({prefs:Object.assign({},p,{blocks:p.blocks.map(function(b){ return b.label==="Sharpen the Saw"?Object.assign({},b,{label:"Renew + Edge"}):b; })})});
+        self.toast("Time block renamed: Renew + Edge");
+      }
+    },1400);
     this._bu=function(e){ if(self._fileDirty && self._fileHandle){ self.writeDataFile(); } };
     window.addEventListener("beforeunload",this._bu);
     if(this.hasFS()){
@@ -4303,6 +4350,15 @@ class Component extends DCLogic {
     });
   }
 
+  moveDay(n){
+    this.setState(function(s){
+      var d=(s.mobDay|0)+n, sh=0;
+      if(d>6){ d=0; sh=7; } else if(d<0){ d=6; sh=-7; }
+      var st={mobDay:d};
+      if(sh){ var dd=new Date(s.anchorMs); dd.setDate(dd.getDate()+sh); st.anchorMs=dd.getTime(); }
+      return st;
+    });
+  }
   edgeScroll(side){
     var now=Date.now();
     if(this.edgeGuard.side!==side){ this.edgeGuard.side=side; this.edgeGuard.until=now+250; return; }
@@ -4546,11 +4602,27 @@ class Component extends DCLogic {
     });
 
     /* grid */
-    var colHeads=cols.map(function(c){
+    var dayView = s.isPhone && s.isPortrait;
+    var phoneLand = s.isPhone && !s.isPortrait;
+    var navOn = !phoneLand;
+    var selDay = Math.max(0,Math.min(6,s.mobDay|0));
+    var vcols = dayView ? [cols[selDay]] : cols;
+    var dayChips = cols.map(function(c,i){
+      var sel=i===selDay;
+      return {
+        d:self.DAYS[c.di].slice(0,3), n:String(c.date.getDate()),
+        style:{flex:1,padding:"4px 2px",borderRadius:9,cursor:"pointer",textAlign:"center",
+          border:"1px solid "+(sel?accent:(c.isToday?"rgba(255,255,255,.4)":"rgba(255,255,255,.10)")),
+          background:sel?accent:"rgba(255,255,255,.05)",
+          color:sel?"#fff":(c.isToday?"#fff":"rgba(231,233,236,.65)")},
+        onClick:function(){ self.setState({mobDay:i}); }
+      };
+    });
+    var colHeads=vcols.map(function(c){
       return {
         day:self.DAYS[c.di], date:c.date.toLocaleDateString("en-NZ",{day:"numeric",month:"short"}),
-        style:{padding:"7px 4px 9px",textAlign:"center",borderBottom:c.isToday?"2px solid "+accent:"1px solid rgba(255,255,255,.14)",position:"relative",
-          background:c.isToday?"rgba(255,255,255,.06)":"transparent",borderRadius:"8px 8px 0 0"}
+        style:{padding:"7px 4px 9px",textAlign:"center",borderBottom:c.isToday?"2px solid "+accent:"1px solid rgba(255,255,255,.14)",position:"sticky",top:0,zIndex:25,
+          background:c.isToday?"rgba(32,36,54,.97)":"rgba(13,16,23,.96)",borderRadius:"8px 8px 0 0"}
       };
     });
 
@@ -4563,7 +4635,7 @@ class Component extends DCLogic {
       var slotH=parseInt(time.split(":")[0],10), slotM=parseInt(time.split(":")[1],10);
       var inSlot=(nowH===slotH)&&(nowM>=slotM)&&(nowM<slotM+30);
       var nowPct=inSlot?((nowM-slotM)/30)*100:0;
-      var cells=cols.map(function(c){
+      var cells=vcols.map(function(c){
         var colCal=s.cal[c.wkKey]||{}, ck=c.di+"-"+time, entry=colCal[ck], aE=amFor(c)[ck];
         var task=(entry&&entry.taskId)?s.tasks.find(function(t){ return t.id===entry.taskId; }):null;
         var stepGoal=null, stepObj=null;
@@ -5038,6 +5110,34 @@ class Component extends DCLogic {
           onSave:function(){ self.saveGoalDraft(); },
           onDelete:function(){ self.delGoal(d.id); }
         };
+      } else if(kind==="qa"){
+        modal={ title:"Add to your week", isQa:true,
+          qaBtns:[
+            {label:"+ Goal", style:{padding:"15px",borderRadius:12,border:"none",background:this.GOAL_COLORS[0],color:"#0B0D11",fontSize:15,fontWeight:800,cursor:"pointer",width:"100%"},
+             onClick:function(){ self.openGoalModal(null); }},
+            {label:"+ Task", style:{padding:"15px",borderRadius:12,border:"1px solid rgba(255,255,255,.16)",background:"rgba(255,255,255,.08)",color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",width:"100%"},
+             onClick:function(){ self.openTaskModal(null); }},
+            {label:"+ Appointment", style:{padding:"15px",borderRadius:12,border:"none",background:"#DC2626",color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",width:"100%"},
+             onClick:function(){ self.openApptModal(null); }}
+          ]};
+      } else if(kind==="more"){
+        var mkMore=function(label,fn){
+          return {label:label,
+            style:{padding:"13px 8px",borderRadius:10,border:"1px solid rgba(255,255,255,.12)",background:"rgba(255,255,255,.06)",color:"#E7E9EC",fontSize:12.5,fontWeight:600,cursor:"pointer",width:"100%"},
+            onClick:function(){ self.closeModal(); fn(); }};
+        };
+        modal={ title:"Menu — "+this.BUILD, isMore:true,
+          moreBtns:[
+            mkMore("Undo"+(s.undoStack.length?" ("+s.undoStack.length+")":""),function(){ self.doUndo(); }),
+            mkMore("Auto Schedule",function(){ self.autoSchedule(); }),
+            mkMore("Roll week forward",function(){ self.shift(7); }),
+            mkMore("Clear calendar",function(){ self.clearCalendar(); }),
+            mkMore((s.taskPanel?"Hide":"Show")+" tasks panel",function(){ self.setState({taskPanel:!s.taskPanel,drawerOpen:true}); }),
+            mkMore("Current week",function(){ self.setState({anchorMs:self.getMon(new Date()).getTime(),mobDay:self.getTodayIdx(s.prefs.timezone||"Pacific/Auckland")}); }),
+            mkMore("\u2039\u2039 Previous week",function(){ self.shift(-7); }),
+            mkMore("Next week \u203a\u203a",function(){ self.shift(7); }),
+            mkMore("Reset to seed data",function(){ self.resetData(); })
+          ]};
       } else if(kind==="split"){
         var total=(d.parts||[]).reduce(function(a,p){ return a+(Number(p.hours)||0); },0);
         var okTotal=total===d.total;
@@ -5073,7 +5173,7 @@ class Component extends DCLogic {
       clockLabel:nowStr+" \u00B7 "+tz.split("/")[1].replace("_"," "),
       buildLabel:this.BUILD,
       toast:s.toast, isMob:s.isMob,
-      showNav: true,
+      showNav: navOn,
       navStyle: s.isMob
         ? {position:"fixed",left:0,right:0,bottom:0,zIndex:130,display:"flex",gap:2,padding:"6px 6px 8px",
            background:"rgba(12,15,21,.86)",backdropFilter:"blur(24px) saturate(160%)",borderTop:"1px solid rgba(255,255,255,.09)"}
@@ -5107,10 +5207,23 @@ class Component extends DCLogic {
       onNewAppt:function(){ self.openApptModal(null); },
       onNewGoal:function(){ self.openGoalModal(null); },
       goalBtnStyle:{padding:"7px 14px",borderRadius:9,border:"none",background:this.GOAL_COLORS[0],color:"#0B0D11",fontSize:11.5,fontWeight:800,cursor:"pointer"},
-      showRotateHint: s.isMob && s.isPortrait,
-      calRowStyle:{display:"flex",gap:14,alignItems:"flex-start",paddingBottom:s.isMob?96:0},
+      showRotateHint: false,
+      calRowStyle:{display:"flex",gap:14,alignItems:"flex-start",paddingBottom:s.isMob?(navOn?96:10):0},
       showSideCol: !s.isMob || s.drawerOpen,
       showFabs: s.isMob && s.view==="calendar",
+      fabWrapStyle:{position:"fixed",right:14,bottom:navOn?86:14,zIndex:120,display:"flex",flexDirection:"column",gap:10,alignItems:"flex-end"},
+      isPhone:s.isPhone, notPhone:!s.isPhone, dayView:dayView, dayChips:dayChips,
+      weekLabelShort: dayView
+        ? this.DAYS[vcols[0].di]+" "+vcols[0].date.toLocaleDateString("en-NZ",{day:"numeric",month:"short"})
+        : this.fmtW(viewStart),
+      onDayPrev:function(){ if(dayView) self.moveDay(-1); else self.shift(-1); },
+      onDayNext:function(){ if(dayView) self.moveDay(1); else self.shift(1); },
+      onQuickAdd:function(){ self.setState({modal:{kind:"qa"},draft:{}}); },
+      onMoreSheet:function(){ self.setState({modal:{kind:"more"},draft:{}}); },
+      onGridTouchStart:function(e){ try{ var t=e.touches[0]; self._tx=t.clientX; self._ty=t.clientY; }catch(err){} },
+      onGridTouchEnd:function(e){ try{ if(!dayView) return; var t=e.changedTouches[0]; var dx=t.clientX-self._tx, dy=t.clientY-self._ty; if(Math.abs(dx)>60&&Math.abs(dx)>2*Math.abs(dy)) self.moveDay(dx<0?1:-1); }catch(err){} },
+      phoneBtnStyle:{width:36,height:34,borderRadius:9,border:"1px solid rgba(255,255,255,.14)",background:"rgba(255,255,255,.06)",color:"#E7E9EC",fontSize:16,cursor:"pointer",padding:0},
+      phoneAddStyle:{width:42,height:34,borderRadius:9,border:"none",background:accent,color:"#fff",fontSize:18,fontWeight:700,cursor:"pointer",padding:0},
       onToggleDrawer:function(){ self.setState({drawerOpen:!s.drawerOpen}); },
       drawerFabStyle:{width:52,height:52,borderRadius:16,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,
         border:"1px solid rgba(255,255,255,.2)",color:"#F2F4F7",
@@ -5168,7 +5281,12 @@ class Component extends DCLogic {
       onPlFilter:function(e){ self.setState({plFilter:e.target.value}); },
       unschedList:unschedList, noUnsched:unsched.length===0,
       parkedList:parkedList, hasParked:parked.length>0,
-      gridStyle:{display:"grid",gridTemplateColumns:(s.isMob?"44px":"58px")+" repeat("+cols.length+", minmax(0,1fr))",minWidth:s.isMob?600:660},
+      gridStyle: dayView
+        ? {display:"grid",gridTemplateColumns:"42px 1fr",minWidth:0}
+        : phoneLand
+        ? {display:"grid",gridTemplateColumns:"34px repeat(7, minmax(0,1fr))",minWidth:0}
+        : {display:"grid",gridTemplateColumns:(s.isMob?"44px":"58px")+" repeat("+cols.length+", minmax(0,1fr))",minWidth:s.isMob?600:660},
+      cornerStyle:{padding:6,position:"sticky",top:0,zIndex:25,background:"rgba(13,16,23,.96)"},
       colHeads:colHeads, rows:rows,
       onGridDragOver:function(e){
         var r=e.currentTarget.getBoundingClientRect(), x=e.clientX;

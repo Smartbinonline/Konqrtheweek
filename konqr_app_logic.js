@@ -53,7 +53,7 @@ class Component extends DCLogic {
   SEED_M = "Ians Advancement - Power of choices from profit. Financially Independent through Passive Income. Choices to Retire. Transfer effort to own software products (High Margin, no capital). More money in Investing. Cheap place to live in NZ with Income. Spend winters offshore.";
   SPr = {
     blocks: [
-      {id:"b1",label:"Sharpen the Saw",start:"06:00",end:"07:30",priority:null,note:"Thinking, Tai Chi, wellbeing"},
+      {id:"b1",label:"Renew + Edge",start:"06:00",end:"07:30",priority:null,note:"Thinking, Tai Chi, wellbeing"},
       {id:"b2",label:"Deep Work",start:"08:00",end:"12:30",priority:1,note:"P1/P2 complex tasks"},
       {id:"b3",label:"General Work",start:"13:00",end:"17:00",priority:2,note:"P2/P3 tasks"},
       {id:"b4",label:"Admin & Light",start:"17:00",end:"18:00",priority:4,note:"P4 admin"},
@@ -71,7 +71,7 @@ class Component extends DCLogic {
     lensGoal:null, taskPanel:true, stepDrag:null, dropHint:null, cloud:"idle",
     anchorMs:this.getMon(new Date()).getTime(), dragId:null, dragOrigin:null,
     plFilter:"all", editWG:-1, wgDraft:"", nowTick:Date.now(), mobDay:0, sideOpen:false,
-    isMob:false, isPortrait:false, navHover:null, drawerOpen:false, hoverTask:null,
+    isMob:false, isPhone:false, isPortrait:false, navHover:null, drawerOpen:false, hoverTask:null,
     toast:null, undoStack:[], modal:null, draft:null,
     taskFilter:"all", groupFilter:"all", missionEdit:false, missionDraft:"", goalDrafts:[],
     prefsEdit:false, prefsDraft:null
@@ -91,7 +91,7 @@ class Component extends DCLogic {
   ld(k,f){ try{ var v=localStorage.getItem("konqr_"+k); return v!==null?JSON.parse(v):f; }catch(e){ return f; } }
   sv(k,d){ try{ localStorage.setItem("konqr_"+k,JSON.stringify(d)); }catch(e){} }
   /* ---------- cloud data file sync ---------- */
-  BUILD = "v15.0";
+  BUILD = "v15.1";
   /* ================= CLOUD SYNC (Cloudflare Worker + KV) ================= */
   CLOUD_DEFAULT_URL = "https://konqr-sync.crawleydesign.workers.dev";
   cloudCfg(){
@@ -560,12 +560,19 @@ class Component extends DCLogic {
     this.setState({
       tasks:this.ld("v13-tasks",this.ST), groups:this.ld("v13-groups",this.SG), goals:this.ld("v13-goals",this.SGo),
       mission:this.ld("v13-mission",this.SEED_M), cal:this.ld("v13-cal",{}), appts:this.ld("v13-appts",this.SA),
-      prefs:this.ld("v13-prefs",this.SPr), wgoals:this.ld("v13-wgoals",{}) || {}, gweek:this.ld("v13-gweek",{}) || {}, loaded:true, fileStatus:"off", fileName:"",
-      isMob: window.innerWidth < 820, isPortrait: window.innerHeight > window.innerWidth
+      prefs:this.ld("v13-prefs",this.SPr), wgoals:this.ld("v13-wgoals",{}) || {}, gweek:this.ld("v13-gweek",{}) || {}, loaded:true, mobDay:this.getTodayIdx((this.ld("v13-prefs",this.SPr)||{}).timezone||"Pacific/Auckland"), fileStatus:"off", fileName:"",
+      isMob: (window.innerWidth < 820 || Math.min(window.innerWidth,window.innerHeight) < 540), isPhone: Math.min(window.innerWidth,window.innerHeight) < 540, isPortrait: window.innerHeight > window.innerWidth
     });
-    this._rz=function(){ self.setState({isMob: window.innerWidth < 820, isPortrait: window.innerHeight > window.innerWidth}); };
+    this._rz=function(){ self.setState({isMob: (window.innerWidth < 820 || Math.min(window.innerWidth,window.innerHeight) < 540), isPhone: Math.min(window.innerWidth,window.innerHeight) < 540, isPortrait: window.innerHeight > window.innerWidth}); };
     window.addEventListener("resize",this._rz);
     this._iv=setInterval(function(){ self.setState({nowTick:Date.now()}); },30000);
+    setTimeout(function(){
+      var p=self.state.prefs;
+      if(p&&p.blocks&&p.blocks.some(function(b){ return b.label==="Sharpen the Saw"; })){
+        self.setState({prefs:Object.assign({},p,{blocks:p.blocks.map(function(b){ return b.label==="Sharpen the Saw"?Object.assign({},b,{label:"Renew + Edge"}):b; })})});
+        self.toast("Time block renamed: Renew + Edge");
+      }
+    },1400);
     this._bu=function(e){ if(self._fileDirty && self._fileHandle){ self.writeDataFile(); } };
     window.addEventListener("beforeunload",this._bu);
     if(this.hasFS()){
@@ -1229,6 +1236,15 @@ class Component extends DCLogic {
     });
   }
 
+  moveDay(n){
+    this.setState(function(s){
+      var d=(s.mobDay|0)+n, sh=0;
+      if(d>6){ d=0; sh=7; } else if(d<0){ d=6; sh=-7; }
+      var st={mobDay:d};
+      if(sh){ var dd=new Date(s.anchorMs); dd.setDate(dd.getDate()+sh); st.anchorMs=dd.getTime(); }
+      return st;
+    });
+  }
   edgeScroll(side){
     var now=Date.now();
     if(this.edgeGuard.side!==side){ this.edgeGuard.side=side; this.edgeGuard.until=now+250; return; }
@@ -1472,11 +1488,27 @@ class Component extends DCLogic {
     });
 
     /* grid */
-    var colHeads=cols.map(function(c){
+    var dayView = s.isPhone && s.isPortrait;
+    var phoneLand = s.isPhone && !s.isPortrait;
+    var navOn = !phoneLand;
+    var selDay = Math.max(0,Math.min(6,s.mobDay|0));
+    var vcols = dayView ? [cols[selDay]] : cols;
+    var dayChips = cols.map(function(c,i){
+      var sel=i===selDay;
+      return {
+        d:self.DAYS[c.di].slice(0,3), n:String(c.date.getDate()),
+        style:{flex:1,padding:"4px 2px",borderRadius:9,cursor:"pointer",textAlign:"center",
+          border:"1px solid "+(sel?accent:(c.isToday?"rgba(255,255,255,.4)":"rgba(255,255,255,.10)")),
+          background:sel?accent:"rgba(255,255,255,.05)",
+          color:sel?"#fff":(c.isToday?"#fff":"rgba(231,233,236,.65)")},
+        onClick:function(){ self.setState({mobDay:i}); }
+      };
+    });
+    var colHeads=vcols.map(function(c){
       return {
         day:self.DAYS[c.di], date:c.date.toLocaleDateString("en-NZ",{day:"numeric",month:"short"}),
-        style:{padding:"7px 4px 9px",textAlign:"center",borderBottom:c.isToday?"2px solid "+accent:"1px solid rgba(255,255,255,.14)",position:"relative",
-          background:c.isToday?"rgba(255,255,255,.06)":"transparent",borderRadius:"8px 8px 0 0"}
+        style:{padding:"7px 4px 9px",textAlign:"center",borderBottom:c.isToday?"2px solid "+accent:"1px solid rgba(255,255,255,.14)",position:"sticky",top:0,zIndex:25,
+          background:c.isToday?"rgba(32,36,54,.97)":"rgba(13,16,23,.96)",borderRadius:"8px 8px 0 0"}
       };
     });
 
@@ -1489,7 +1521,7 @@ class Component extends DCLogic {
       var slotH=parseInt(time.split(":")[0],10), slotM=parseInt(time.split(":")[1],10);
       var inSlot=(nowH===slotH)&&(nowM>=slotM)&&(nowM<slotM+30);
       var nowPct=inSlot?((nowM-slotM)/30)*100:0;
-      var cells=cols.map(function(c){
+      var cells=vcols.map(function(c){
         var colCal=s.cal[c.wkKey]||{}, ck=c.di+"-"+time, entry=colCal[ck], aE=amFor(c)[ck];
         var task=(entry&&entry.taskId)?s.tasks.find(function(t){ return t.id===entry.taskId; }):null;
         var stepGoal=null, stepObj=null;
@@ -1964,6 +1996,34 @@ class Component extends DCLogic {
           onSave:function(){ self.saveGoalDraft(); },
           onDelete:function(){ self.delGoal(d.id); }
         };
+      } else if(kind==="qa"){
+        modal={ title:"Add to your week", isQa:true,
+          qaBtns:[
+            {label:"+ Goal", style:{padding:"15px",borderRadius:12,border:"none",background:this.GOAL_COLORS[0],color:"#0B0D11",fontSize:15,fontWeight:800,cursor:"pointer",width:"100%"},
+             onClick:function(){ self.openGoalModal(null); }},
+            {label:"+ Task", style:{padding:"15px",borderRadius:12,border:"1px solid rgba(255,255,255,.16)",background:"rgba(255,255,255,.08)",color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",width:"100%"},
+             onClick:function(){ self.openTaskModal(null); }},
+            {label:"+ Appointment", style:{padding:"15px",borderRadius:12,border:"none",background:"#DC2626",color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",width:"100%"},
+             onClick:function(){ self.openApptModal(null); }}
+          ]};
+      } else if(kind==="more"){
+        var mkMore=function(label,fn){
+          return {label:label,
+            style:{padding:"13px 8px",borderRadius:10,border:"1px solid rgba(255,255,255,.12)",background:"rgba(255,255,255,.06)",color:"#E7E9EC",fontSize:12.5,fontWeight:600,cursor:"pointer",width:"100%"},
+            onClick:function(){ self.closeModal(); fn(); }};
+        };
+        modal={ title:"Menu — "+this.BUILD, isMore:true,
+          moreBtns:[
+            mkMore("Undo"+(s.undoStack.length?" ("+s.undoStack.length+")":""),function(){ self.doUndo(); }),
+            mkMore("Auto Schedule",function(){ self.autoSchedule(); }),
+            mkMore("Roll week forward",function(){ self.shift(7); }),
+            mkMore("Clear calendar",function(){ self.clearCalendar(); }),
+            mkMore((s.taskPanel?"Hide":"Show")+" tasks panel",function(){ self.setState({taskPanel:!s.taskPanel,drawerOpen:true}); }),
+            mkMore("Current week",function(){ self.setState({anchorMs:self.getMon(new Date()).getTime(),mobDay:self.getTodayIdx(s.prefs.timezone||"Pacific/Auckland")}); }),
+            mkMore("\u2039\u2039 Previous week",function(){ self.shift(-7); }),
+            mkMore("Next week \u203a\u203a",function(){ self.shift(7); }),
+            mkMore("Reset to seed data",function(){ self.resetData(); })
+          ]};
       } else if(kind==="split"){
         var total=(d.parts||[]).reduce(function(a,p){ return a+(Number(p.hours)||0); },0);
         var okTotal=total===d.total;
@@ -1999,7 +2059,7 @@ class Component extends DCLogic {
       clockLabel:nowStr+" \u00B7 "+tz.split("/")[1].replace("_"," "),
       buildLabel:this.BUILD,
       toast:s.toast, isMob:s.isMob,
-      showNav: true,
+      showNav: navOn,
       navStyle: s.isMob
         ? {position:"fixed",left:0,right:0,bottom:0,zIndex:130,display:"flex",gap:2,padding:"6px 6px 8px",
            background:"rgba(12,15,21,.86)",backdropFilter:"blur(24px) saturate(160%)",borderTop:"1px solid rgba(255,255,255,.09)"}
@@ -2033,10 +2093,23 @@ class Component extends DCLogic {
       onNewAppt:function(){ self.openApptModal(null); },
       onNewGoal:function(){ self.openGoalModal(null); },
       goalBtnStyle:{padding:"7px 14px",borderRadius:9,border:"none",background:this.GOAL_COLORS[0],color:"#0B0D11",fontSize:11.5,fontWeight:800,cursor:"pointer"},
-      showRotateHint: s.isMob && s.isPortrait,
-      calRowStyle:{display:"flex",gap:14,alignItems:"flex-start",paddingBottom:s.isMob?96:0},
+      showRotateHint: false,
+      calRowStyle:{display:"flex",gap:14,alignItems:"flex-start",paddingBottom:s.isMob?(navOn?96:10):0},
       showSideCol: !s.isMob || s.drawerOpen,
       showFabs: s.isMob && s.view==="calendar",
+      fabWrapStyle:{position:"fixed",right:14,bottom:navOn?86:14,zIndex:120,display:"flex",flexDirection:"column",gap:10,alignItems:"flex-end"},
+      isPhone:s.isPhone, notPhone:!s.isPhone, dayView:dayView, dayChips:dayChips,
+      weekLabelShort: dayView
+        ? this.DAYS[vcols[0].di]+" "+vcols[0].date.toLocaleDateString("en-NZ",{day:"numeric",month:"short"})
+        : this.fmtW(viewStart),
+      onDayPrev:function(){ if(dayView) self.moveDay(-1); else self.shift(-1); },
+      onDayNext:function(){ if(dayView) self.moveDay(1); else self.shift(1); },
+      onQuickAdd:function(){ self.setState({modal:{kind:"qa"},draft:{}}); },
+      onMoreSheet:function(){ self.setState({modal:{kind:"more"},draft:{}}); },
+      onGridTouchStart:function(e){ try{ var t=e.touches[0]; self._tx=t.clientX; self._ty=t.clientY; }catch(err){} },
+      onGridTouchEnd:function(e){ try{ if(!dayView) return; var t=e.changedTouches[0]; var dx=t.clientX-self._tx, dy=t.clientY-self._ty; if(Math.abs(dx)>60&&Math.abs(dx)>2*Math.abs(dy)) self.moveDay(dx<0?1:-1); }catch(err){} },
+      phoneBtnStyle:{width:36,height:34,borderRadius:9,border:"1px solid rgba(255,255,255,.14)",background:"rgba(255,255,255,.06)",color:"#E7E9EC",fontSize:16,cursor:"pointer",padding:0},
+      phoneAddStyle:{width:42,height:34,borderRadius:9,border:"none",background:accent,color:"#fff",fontSize:18,fontWeight:700,cursor:"pointer",padding:0},
       onToggleDrawer:function(){ self.setState({drawerOpen:!s.drawerOpen}); },
       drawerFabStyle:{width:52,height:52,borderRadius:16,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,
         border:"1px solid rgba(255,255,255,.2)",color:"#F2F4F7",
@@ -2094,7 +2167,12 @@ class Component extends DCLogic {
       onPlFilter:function(e){ self.setState({plFilter:e.target.value}); },
       unschedList:unschedList, noUnsched:unsched.length===0,
       parkedList:parkedList, hasParked:parked.length>0,
-      gridStyle:{display:"grid",gridTemplateColumns:(s.isMob?"44px":"58px")+" repeat("+cols.length+", minmax(0,1fr))",minWidth:s.isMob?600:660},
+      gridStyle: dayView
+        ? {display:"grid",gridTemplateColumns:"42px 1fr",minWidth:0}
+        : phoneLand
+        ? {display:"grid",gridTemplateColumns:"34px repeat(7, minmax(0,1fr))",minWidth:0}
+        : {display:"grid",gridTemplateColumns:(s.isMob?"44px":"58px")+" repeat("+cols.length+", minmax(0,1fr))",minWidth:s.isMob?600:660},
+      cornerStyle:{padding:6,position:"sticky",top:0,zIndex:25,background:"rgba(13,16,23,.96)"},
       colHeads:colHeads, rows:rows,
       onGridDragOver:function(e){
         var r=e.currentTarget.getBoundingClientRect(), x=e.clientX;
